@@ -1,0 +1,296 @@
+/* Reset simples */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --roxo: #3b2a8f;
+  --roxo-claro: #ece9fb;
+  --fundo: #f4f5fa;
+  --cartao: #ffffff;
+  --texto: #1a1a1a;
+  --suave: #5f6270;
+  --certo: #1f8a4c;
+  --certo-fundo: #e3f5ea;
+  --errado: #c0392b;
+  --errado-fundo: #fbe7e5;
+  --borda: #dfe1ea;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --roxo: #8f7cf0;
+    --roxo-claro: #2a2546;
+    --fundo: #121218;
+    --cartao: #1d1d26;
+    --texto: #ececf1;
+    --suave: #a3a5b3;
+    --certo: #4cc47f;
+    --certo-fundo: #183526;
+    --errado: #f07466;
+    --errado-fundo: #3a1d1a;
+    --borda: #33343f;
+  }
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  background-color: var(--fundo);
+  color: var(--texto);
+  padding-bottom: 2rem;
+  line-height: 1.45;
+}
+
+header {
+  background-color: #3b2a8f;
+  color: white;
+  padding: 1.1rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  text-align: center;
+  position: relative;
+}
+
+header > div {
+  padding: 0 2.6rem;
+}
+
+header h1 {
+  font-size: 1.35rem;
+}
+
+.subtitulo {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  margin-top: 0.15rem;
+}
+
+.voltar {
+  position: absolute;
+  left: 0.75rem;
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.2rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  cursor: pointer;
+  z-index: 1;
+}
+
+main {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.cartao {
+  background: var(--cartao);
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+/* Lista de matérias */
+.materia {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.materia .icone {
+  font-size: 1.8rem;
+}
+
+.materia .info {
+  flex: 1;
+}
+
+.materia strong {
+  display: block;
+}
+
+.materia small {
+  color: var(--suave);
+}
+
+.barra {
+  height: 6px;
+  background: var(--roxo-claro);
+  border-radius: 3px;
+  margin-top: 0.4rem;
+  overflow: hidden;
+}
+
+.barra span {
+  display: block;
+  height: 100%;
+  background: var(--roxo);
+}
+
+/* Abas */
+.abas {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.abas button {
+  flex: 1;
+  padding: 0.6rem 0.4rem;
+  border: 1px solid var(--borda);
+  background: var(--cartao);
+  color: var(--texto);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.abas button.ativa {
+  background: var(--roxo);
+  border-color: var(--roxo);
+  color: white;
+  font-weight: 600;
+}
+
+/* Resumos */
+.cartao h3 {
+  font-size: 1.05rem;
+  margin-bottom: 0.4rem;
+}
+
+.cartao ul {
+  margin: 0.6rem 0 0 1.1rem;
+}
+
+.cartao li {
+  margin-bottom: 0.25rem;
+}
+
+/* Quiz */
+.contador {
+  color: var(--suave);
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+}
+
+.pergunta {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 0.8rem;
+}
+
+.alternativa {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--borda);
+  background: var(--cartao);
+  color: var(--texto);
+  border-radius: 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.alternativa:disabled {
+  cursor: default;
+}
+
+.alternativa.certa {
+  border-color: var(--certo);
+  background: var(--certo-fundo);
+}
+
+.alternativa.errada {
+  border-color: var(--errado);
+  background: var(--errado-fundo);
+}
+
+.explicacao {
+  margin-top: 0.6rem;
+  padding: 0.75rem;
+  border-radius: 10px;
+  background: var(--roxo-claro);
+  font-size: 0.92rem;
+}
+
+.botao {
+  display: block;
+  width: 100%;
+  margin-top: 0.8rem;
+  padding: 0.8rem;
+  background: var(--roxo);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.botao.secundario {
+  background: transparent;
+  color: var(--roxo);
+  border: 1px solid var(--roxo);
+}
+
+.resultado {
+  text-align: center;
+}
+
+.resultado .nota {
+  font-size: 2.4rem;
+  font-weight: 700;
+  color: var(--roxo);
+}
+
+/* Flashcards */
+.flashcard {
+  min-height: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 1.1rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.flashcard.virado {
+  background: var(--roxo-claro);
+}
+
+.flashcard small {
+  color: var(--suave);
+  font-size: 0.8rem;
+  margin-top: 0.8rem;
+}
+
+.navegacao {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.navegacao .botao {
+  margin-top: 0;
+}
+
+.vazio {
+  text-align: center;
+  color: var(--suave);
+}
