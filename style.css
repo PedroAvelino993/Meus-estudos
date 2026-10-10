@@ -143,6 +143,15 @@ main {
   background: var(--roxo);
 }
 
+a.materia {
+  text-decoration: none;
+}
+
+.materia.tutor {
+  background: var(--roxo-claro);
+  border-color: var(--roxo);
+}
+
 /* Abas */
 .abas {
   display: flex;

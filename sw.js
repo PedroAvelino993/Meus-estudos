@@ -1,7 +1,7 @@
 // "Service worker": guarda uma cópia dos arquivos do app para ele abrir
 // mesmo sem internet. Sempre tenta buscar a versão mais nova primeiro
 // (assim o conteúdo atualizado aparece) e usa a cópia só se estiver offline.
-const CACHE_NAME = "meus-estudos-v1";
+const CACHE_NAME = "meus-estudos-v2";
 const ARQUIVOS_PARA_GUARDAR = [
   "./",
   "./index.html",

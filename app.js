@@ -10,6 +10,9 @@ const voltar = document.getElementById("voltar");
 
 const CHAVE = "meus-estudos-progresso";
 
+// Página do tutor com IA, publicada no Claude
+const TUTOR_URL = "https://claude.ai/artifact/VDVFodcS86nj2iSj9LS7Mv";
+
 function lerProgresso() {
   try {
     return JSON.parse(localStorage.getItem(CHAVE)) || {};
@@ -59,6 +62,18 @@ function telaInicial() {
   app.innerHTML = "";
 
   const progresso = lerProgresso();
+
+  // Atalho para o tutor com IA (abre no site/app do Claude)
+  const tutor = el("a", "cartao materia tutor");
+  tutor.href = TUTOR_URL;
+  tutor.target = "_blank";
+  tutor.rel = "noopener";
+  tutor.appendChild(el("span", "icone", "🤖"));
+  const infoTutor = el("div", "info");
+  infoTutor.appendChild(el("strong", "", "Tutor com IA"));
+  infoTutor.appendChild(el("small", "", "Tire dúvidas e treine com perguntas de qualquer matéria"));
+  tutor.appendChild(infoTutor);
+  app.appendChild(tutor);
 
   MATERIAS.forEach((materia) => {
     const botao = el("button", "cartao materia");
