@@ -254,3 +254,7 @@ function iniciarFlashcards(materia, area) {
 
 voltar.addEventListener("click", telaInicial);
 telaInicial();
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js");
+}

@@ -47,6 +47,8 @@ header {
   background-color: #3b2a8f;
   color: white;
   padding: 1.1rem 1rem;
+  /* No iPhone, como app da tela inicial, deixa espaço para o relógio/notch */
+  padding-top: calc(1.1rem + env(safe-area-inset-top));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -72,6 +74,8 @@ header h1 {
 .voltar {
   position: absolute;
   left: 0.75rem;
+  top: calc(50% + env(safe-area-inset-top) / 2);
+  transform: translateY(-50%);
   background: rgba(255, 255, 255, 0.15);
   color: white;
   border: none;

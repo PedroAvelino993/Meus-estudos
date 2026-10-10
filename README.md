@@ -24,3 +24,11 @@ A melhor nota de cada quiz fica salva no navegador.
 ## Como editar o conteúdo
 
 Todo o conteúdo fica em `conteudo.js`. Para outra prova, basta trocar ou adicionar matérias seguindo o mesmo formato.
+
+## Instalar no iPhone
+
+1. Abra o link do app no **Safari**.
+2. Toque em **Compartilhar** (o quadrado com a seta para cima).
+3. Toque em **Adicionar à Tela de Início** e depois em **Adicionar**.
+
+O app aparece com o ícone 📚 e o nome "Estudos", abre em tela cheia e funciona sem internet depois da primeira vez.
