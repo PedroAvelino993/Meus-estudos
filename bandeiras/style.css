@@ -138,6 +138,51 @@ main {
   }
 }
 
+/* Modo Mista */
+.mista {
+  background: var(--cartao);
+  border: 1px dashed var(--destaque);
+  border-radius: 14px;
+  padding: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.mista-titulo {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+
+.mista-opcoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.mista-opcoes .opcao {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid var(--borda);
+  background: var(--fundo);
+  color: var(--texto);
+  cursor: pointer;
+}
+
+.mista-opcoes .opcao[aria-pressed="true"] {
+  background: var(--certo-fundo);
+  border-color: var(--certo);
+  color: var(--certo);
+  font-weight: 700;
+}
+
+.mista-vazia {
+  margin-top: 0.7rem;
+  color: var(--suave);
+  font-size: 0.9rem;
+}
+
 /* Bandeira grande */
 .moldura {
   background: var(--cartao);

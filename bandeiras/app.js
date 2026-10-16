@@ -1,7 +1,8 @@
 // Bandeiras do Mundo: aparece uma bandeira, você digita o país. Sem tempo.
 // Usa PAISES (paises.js) e corrigir() (correcao.js).
 
-const CONTINENTES = ["Todos", "África", "Américas", "Ásia", "Europa", "Oceania"];
+const CONTINENTES = ["África", "Américas", "Ásia", "Europa", "Oceania"];
+const FILTROS = ["Todos", "Mista", ...CONTINENTES];
 const DE = { "África": "da África", "Américas": "das Américas", "Ásia": "da Ásia", "Europa": "da Europa", "Oceania": "da Oceania" };
 const CHAVE = "bandeiras-progresso";
 
@@ -9,15 +10,19 @@ const $ = (id) => document.getElementById(id);
 const elBandeira = $("bandeira"), elMoldura = $("moldura"), elForm = $("form");
 const elResposta = $("resposta"), elRetorno = $("retorno"), elGrade = $("grade");
 const elPlacar = $("placar"), elBarra = $("barra"), elFiltros = $("filtros");
+const elMista = $("mista"), elMistaOpcoes = $("mista-opcoes"), elMistaVazia = $("mista-vazia");
 const elJogo = $("jogo"), elFim = $("fim"), elFimTexto = $("fim-texto");
 const elDica = $("dica"), elMostrar = $("mostrar"), elPular = $("pular"), elRecomecar = $("recomecar");
 
 // ---------- Progresso salvo no aparelho ----------
 
-let progresso = { acertos: {}, filtro: "Todos" };
+// mista = continentes escolhidos no modo "Mista"
+let progresso = { acertos: {}, filtro: "Todos", mista: [] };
 try {
   const salvo = JSON.parse(localStorage.getItem(CHAVE));
   if (salvo && salvo.acertos) progresso = { ...progresso, ...salvo };
+  if (!Array.isArray(progresso.mista)) progresso.mista = [];
+  if (!FILTROS.includes(progresso.filtro)) progresso.filtro = "Todos";
 } catch {}
 
 function salvar() {
@@ -43,7 +48,22 @@ function embaralhar(lista) {
 }
 
 function doFiltro() {
-  return progresso.filtro === "Todos" ? PAISES : PAISES.filter((p) => p.r === progresso.filtro);
+  if (progresso.filtro === "Todos") return PAISES;
+  if (progresso.filtro === "Mista") return PAISES.filter((p) => progresso.mista.includes(p.r));
+  return PAISES.filter((p) => p.r === progresso.filtro);
+}
+
+// "da África, da Europa e da Oceania"
+function nomeDoFiltro() {
+  const lista = progresso.filtro === "Mista"
+    ? CONTINENTES.filter((c) => progresso.mista.includes(c))
+    : [progresso.filtro];
+  const partes = lista.map((c) => DE[c]);
+  return partes.length > 1 ? partes.slice(0, -1).join(", ") + " e " + partes.at(-1) : partes[0];
+}
+
+function mistaSemEscolha() {
+  return progresso.filtro === "Mista" && progresso.mista.length === 0;
 }
 
 function montarFila() {
@@ -64,15 +84,17 @@ function mostrarAtual() {
   limparRetorno();
   elMostrar.textContent = "Ver resposta";
 
-  const terminou = !atual;
-  elJogo.hidden = terminou;
+  const semEscolha = mistaSemEscolha();
+  const terminou = !atual && !semEscolha;
+  elJogo.hidden = !atual;
   elFim.hidden = !terminou;
+  elMistaVazia.hidden = !semEscolha;
   if (terminou) {
     const total = doFiltro().length;
     elFimTexto.textContent = progresso.filtro === "Todos"
       ? `Você acertou todas as ${total} bandeiras do mundo!`
-      : `Você acertou todas as ${total} bandeiras ${DE[progresso.filtro]}.`;
-  } else {
+      : `Você acertou todas as ${total} bandeiras ${nomeDoFiltro()}.`;
+  } else if (atual) {
     elBandeira.src = urlBandeira(atual);
     elResposta.value = "";
   }
@@ -93,15 +115,15 @@ function atualizarPlacar() {
   const lista = doFiltro();
   const feitas = lista.filter((p) => progresso.acertos[p.c]).length;
   elPlacar.textContent = `${feitas} / ${lista.length}`;
-  elBarra.style.width = `${(feitas / lista.length) * 100}%`;
+  elBarra.style.width = lista.length ? `${(feitas / lista.length) * 100}%` : "0";
 }
 
 function montarFiltros() {
   elFiltros.innerHTML = "";
-  for (const nome of CONTINENTES) {
+  for (const nome of FILTROS) {
     const b = document.createElement("button");
     b.type = "button";
-    b.textContent = nome;
+    b.textContent = nome === "Mista" ? "🔀 Mista" : nome;
     b.setAttribute("aria-pressed", String(nome === progresso.filtro));
     b.addEventListener("click", () => {
       progresso.filtro = nome;
@@ -109,6 +131,27 @@ function montarFiltros() {
       iniciar();
     });
     elFiltros.appendChild(b);
+  }
+
+  // Modo Mista: escolha quais continentes entram na mistura
+  elMista.hidden = progresso.filtro !== "Mista";
+  elMistaOpcoes.innerHTML = "";
+  for (const nome of CONTINENTES) {
+    const ligado = progresso.mista.includes(nome);
+    const total = PAISES.filter((p) => p.r === nome).length;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "opcao";
+    b.textContent = `${ligado ? "✓ " : ""}${nome} (${total})`;
+    b.setAttribute("aria-pressed", String(ligado));
+    b.addEventListener("click", () => {
+      progresso.mista = ligado
+        ? progresso.mista.filter((c) => c !== nome)
+        : [...progresso.mista, nome];
+      salvar();
+      iniciar();
+    });
+    elMistaOpcoes.appendChild(b);
   }
 }
 

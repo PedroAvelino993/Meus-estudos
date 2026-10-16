@@ -1,6 +1,6 @@
 // Guarda o app e todas as bandeiras no aparelho para funcionar sem internet.
 // Sempre tenta a versão mais nova primeiro; usa a cópia só se estiver offline.
-const CACHE_NAME = "bandeiras-v1";
+const CACHE_NAME = "bandeiras-v2";
 const ARQUIVOS = [
   "./",
   "./index.html",
