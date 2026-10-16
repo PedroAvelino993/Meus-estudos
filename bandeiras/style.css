@@ -1,0 +1,351 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --azul: #0f2a44;
+  --fundo: #eef2f6;
+  --cartao: #ffffff;
+  --texto: #142235;
+  --suave: #5b6878;
+  --borda: #d5dde6;
+  --destaque: #1d6fd6;
+  --certo: #198a4a;
+  --certo-fundo: #e1f4e8;
+  --errado: #c43d2f;
+  --errado-fundo: #fbe6e3;
+  --dica: #8a5a00;
+  --dica-fundo: #fff2d6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: #0d1520;
+    --cartao: #16212f;
+    --texto: #e7edf4;
+    --suave: #9aa8b8;
+    --borda: #2a394b;
+    --destaque: #5aa2ff;
+    --certo: #4fcf85;
+    --certo-fundo: #143324;
+    --errado: #ff8070;
+    --errado-fundo: #3a1c18;
+    --dica: #ffc561;
+    --dica-fundo: #33280f;
+  }
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--fundo);
+  color: var(--texto);
+  line-height: 1.4;
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+}
+
+.escondido {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+/* Topo */
+header {
+  background: var(--azul);
+  color: white;
+  padding: 1rem;
+  padding-top: calc(1rem + env(safe-area-inset-top));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+header h1 {
+  font-size: 1.2rem;
+}
+
+.placar {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  min-width: 6.5rem;
+}
+
+.barra {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  margin-top: 0.3rem;
+  overflow: hidden;
+}
+
+.barra span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #4fcf85;
+  transition: width 0.3s;
+}
+
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+/* Filtros de continente */
+.filtros {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0.9rem 0 0.6rem;
+  scrollbar-width: none;
+}
+
+.filtros::-webkit-scrollbar {
+  display: none;
+}
+
+.filtros button {
+  flex: none;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--borda);
+  background: var(--cartao);
+  color: var(--texto);
+  cursor: pointer;
+}
+
+.filtros button[aria-pressed="true"] {
+  background: var(--azul);
+  border-color: var(--azul);
+  color: white;
+  font-weight: 700;
+}
+
+@media (prefers-color-scheme: dark) {
+  .filtros button[aria-pressed="true"] {
+    background: var(--destaque);
+    border-color: var(--destaque);
+    color: #0d1520;
+  }
+}
+
+/* Bandeira grande */
+.moldura {
+  background: var(--cartao);
+  border: 1px solid var(--borda);
+  border-radius: 14px;
+  height: 230px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.2rem;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.moldura img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+}
+
+.moldura.certo {
+  background: var(--certo-fundo);
+  border-color: var(--certo);
+}
+
+.moldura.errado {
+  background: var(--errado-fundo);
+  border-color: var(--errado);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .moldura.tremer {
+    animation: tremer 0.3s;
+  }
+
+  @keyframes tremer {
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+}
+
+/* Campo de resposta */
+form {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 1.1rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 12px;
+  border: 2px solid var(--borda);
+  background: var(--cartao);
+  color: var(--texto);
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--destaque);
+}
+
+.ok {
+  font: inherit;
+  font-weight: 700;
+  padding: 0 1.3rem;
+  border: none;
+  border-radius: 12px;
+  background: var(--destaque);
+  color: white;
+  cursor: pointer;
+}
+
+.retorno {
+  min-height: 1.6rem;
+  margin: 0.6rem 0 0.2rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.retorno.certo { color: var(--certo); }
+.retorno.errado { color: var(--errado); }
+.retorno.dica { color: var(--dica); }
+
+.acoes {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.acoes button {
+  flex: 1;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.65rem 0.4rem;
+  border-radius: 10px;
+  border: 1px solid var(--borda);
+  background: var(--cartao);
+  color: var(--texto);
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 3px solid var(--destaque);
+  outline-offset: 2px;
+}
+
+/* Final */
+.fim {
+  background: var(--certo-fundo);
+  border: 1px solid var(--certo);
+  border-radius: 14px;
+  padding: 1.4rem 1rem;
+  text-align: center;
+}
+
+.fim-titulo {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-bottom: 0.3rem;
+}
+
+/* Grade com todas as bandeiras */
+.todas {
+  margin-top: 1.8rem;
+}
+
+.todas-topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.todas h2 {
+  font-size: 1.05rem;
+}
+
+.ajuda {
+  color: var(--suave);
+  font-size: 0.85rem;
+  margin: 0.2rem 0 0.7rem;
+}
+
+.link {
+  font: inherit;
+  font-size: 0.9rem;
+  background: none;
+  border: none;
+  color: var(--destaque);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link.confirmar {
+  color: var(--errado);
+  font-weight: 700;
+}
+
+.grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 0.5rem;
+}
+
+.item {
+  font: inherit;
+  background: var(--cartao);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 0.45rem 0.35rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  color: var(--texto);
+}
+
+.item img {
+  height: 40px;
+  max-width: 100%;
+  object-fit: contain;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.item span {
+  font-size: 0.72rem;
+  line-height: 1.15;
+  text-align: center;
+  min-height: 1.7em;
+  color: var(--suave);
+  overflow-wrap: anywhere;
+}
+
+.item.acertou {
+  background: var(--certo-fundo);
+  border-color: var(--certo);
+  cursor: default;
+}
+
+.item.acertou span {
+  color: var(--certo);
+  font-weight: 700;
+}
+
+.item.atual {
+  outline: 3px solid var(--destaque);
+  outline-offset: 1px;
+}

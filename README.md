@@ -32,3 +32,7 @@ Todo o conteúdo fica em `conteudo.js`. Para outra prova, basta trocar ou adicio
 3. Toque em **Adicionar à Tela de Início** e depois em **Adicionar**.
 
 O app aparece com o ícone 📚 e o nome "Estudos", abre em tela cheia e funciona sem internet depois da primeira vez.
+
+## Bandeiras do Mundo
+
+Jogo para aprender as bandeiras dos 197 países, sem tempo. Fica na pasta `bandeiras/` e abre em `/bandeiras/` no mesmo link do GitHub Pages. As imagens das bandeiras vêm do pacote [svg-country-flags](https://github.com/hjnilsson/country-flags), copiadas da Wikipédia.

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Bandeiras do Mundo</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" href="icon-192.png">
+  <meta name="theme-color" content="#0f2a44">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Bandeiras">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+
+  <header>
+    <h1>Bandeiras do Mundo</h1>
+    <div class="placar">
+      <span id="placar">0 / 197</span>
+      <div class="barra"><span id="barra"></span></div>
+    </div>
+  </header>
+
+  <main>
+    <nav class="filtros" id="filtros" aria-label="Continentes"></nav>
+
+    <section class="jogo" id="jogo">
+      <div class="moldura" id="moldura">
+        <img id="bandeira" alt="Bandeira para adivinhar">
+      </div>
+
+      <form id="form" autocomplete="off">
+        <label for="resposta" class="escondido">Nome do país</label>
+        <input id="resposta" type="text" placeholder="Digite o nome do país"
+               autocomplete="off" autocorrect="off" autocapitalize="off"
+               spellcheck="false" enterkeyhint="go">
+        <button type="submit" class="ok">OK</button>
+      </form>
+
+      <p class="retorno" id="retorno" aria-live="polite">&nbsp;</p>
+
+      <div class="acoes">
+        <button type="button" id="dica">Dica</button>
+        <button type="button" id="mostrar">Ver resposta</button>
+        <button type="button" id="pular">Pular</button>
+      </div>
+    </section>
+
+    <section class="fim" id="fim" hidden>
+      <p class="fim-titulo">🎉 Parabéns!</p>
+      <p id="fim-texto"></p>
+    </section>
+
+    <section class="todas">
+      <div class="todas-topo">
+        <h2>Todas as bandeiras</h2>
+        <button type="button" id="recomecar" class="link">Recomeçar</button>
+      </div>
+      <p class="ajuda">Toque numa bandeira para tentar ela agora.</p>
+      <div class="grade" id="grade"></div>
+    </section>
+  </main>
+
+  <script src="paises.js"></script>
+  <script src="correcao.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

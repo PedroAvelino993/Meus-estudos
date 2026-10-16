@@ -1,7 +1,7 @@
 // "Service worker": guarda uma cópia dos arquivos do app para ele abrir
 // mesmo sem internet. Sempre tenta buscar a versão mais nova primeiro
 // (assim o conteúdo atualizado aparece) e usa a cópia só se estiver offline.
-const CACHE_NAME = "meus-estudos-v2";
+const CACHE_NAME = "meus-estudos-v3";
 const ARQUIVOS_PARA_GUARDAR = [
   "./",
   "./index.html",
@@ -22,7 +22,7 @@ self.addEventListener("install", (evento) => {
 self.addEventListener("activate", (evento) => {
   evento.waitUntil(
     caches.keys().then((nomes) =>
-      Promise.all(nomes.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n)))
+      Promise.all(nomes.filter((n) => n.startsWith("meus-estudos-") && n !== CACHE_NAME).map((n) => caches.delete(n)))
     )
   );
 });
