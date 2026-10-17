@@ -2,7 +2,7 @@
 // Usa PAISES (paises.js) e corrigir() (correcao.js).
 
 const CONTINENTES = ["África", "Américas", "Ásia", "Europa", "Oceania"];
-const FILTROS = ["Todos", "Mista", ...CONTINENTES];
+const FILTROS = ["Todos", "Mista", ...CONTINENTES, "Performance"];
 const DE = { "África": "da África", "Américas": "das Américas", "Ásia": "da Ásia", "Europa": "da Europa", "Oceania": "da Oceania" };
 const CHAVE = "bandeiras-progresso";
 
@@ -11,6 +11,7 @@ const elBandeira = $("bandeira"), elMoldura = $("moldura"), elForm = $("form");
 const elResposta = $("resposta"), elRetorno = $("retorno"), elGrade = $("grade");
 const elPlacar = $("placar"), elBarra = $("barra"), elFiltros = $("filtros");
 const elMista = $("mista"), elMistaOpcoes = $("mista-opcoes"), elMistaVazia = $("mista-vazia");
+const elTodas = $("todas"), elPerformance = $("performance");
 const elJogo = $("jogo"), elFim = $("fim"), elFimTexto = $("fim-texto");
 const elDica = $("dica"), elMostrar = $("mostrar"), elPular = $("pular"), elRecomecar = $("recomecar");
 
@@ -123,7 +124,7 @@ function montarFiltros() {
   for (const nome of FILTROS) {
     const b = document.createElement("button");
     b.type = "button";
-    b.textContent = nome === "Mista" ? "🔀 Mista" : nome;
+    b.textContent = { Mista: "🔀 Mista", Performance: "⚡ Performance" }[nome] || nome;
     b.setAttribute("aria-pressed", String(nome === progresso.filtro));
     b.addEventListener("click", () => {
       progresso.filtro = nome;
@@ -132,6 +133,9 @@ function montarFiltros() {
     });
     elFiltros.appendChild(b);
   }
+  // Deixa o botão escolhido visível na fileira (o Performance fica no fim)
+  const ativo = elFiltros.querySelector('[aria-pressed="true"]');
+  if (ativo) elFiltros.scrollLeft = Math.max(0, ativo.offsetLeft - elFiltros.offsetLeft - 16);
 
   // Modo Mista: escolha quais continentes entram na mistura
   elMista.hidden = progresso.filtro !== "Mista";
@@ -283,6 +287,19 @@ function iniciar() {
   clearTimeout(esperando);
   esperando = null;
   montarFiltros();
+
+  // O modo Performance tem telas próprias (performance.js)
+  const modoPerf = progresso.filtro === "Performance";
+  elPerformance.hidden = !modoPerf;
+  elTodas.hidden = modoPerf;
+  if (modoPerf) {
+    atual = null;
+    elJogo.hidden = true;
+    elFim.hidden = true;
+    renderPerformance();
+    return;
+  }
+
   montarFila();
   montarGrade();
   atualizarPlacar();

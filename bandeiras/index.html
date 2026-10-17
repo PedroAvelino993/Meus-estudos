@@ -60,7 +60,49 @@
       <p id="fim-texto"></p>
     </section>
 
-    <section class="todas">
+    <section class="performance" id="performance" hidden>
+      <div id="perf-escolha">
+        <div class="mista">
+          <p class="mista-titulo">⚡ Modo Performance</p>
+          <p class="perf-explica">Primeiro vem um teste: cada bandeira aparece uma vez, sem dica. Errou, passa. Depois, o treino repete só as bandeiras que você errou, para você aprender o que ainda não sabe.</p>
+          <p class="mista-titulo">Escolha os continentes:</p>
+          <div class="mista-opcoes" id="perf-opcoes"></div>
+        </div>
+        <button type="button" class="principal" id="perf-comecar">Começar teste</button>
+      </div>
+
+      <div id="perf-rodada" hidden>
+        <p class="perf-etiqueta" id="perf-etiqueta"></p>
+        <div class="moldura" id="perf-moldura">
+          <img id="perf-bandeira" alt="Bandeira para adivinhar">
+        </div>
+        <form id="perf-form" autocomplete="off">
+          <label for="perf-resposta" class="escondido">Nome do país</label>
+          <input id="perf-resposta" type="text" placeholder="Digite o nome do país"
+                 autocomplete="off" autocorrect="off" autocapitalize="off"
+                 spellcheck="false" enterkeyhint="go">
+          <button type="submit" class="ok" id="perf-ok">OK</button>
+        </form>
+        <p class="retorno" id="perf-retorno" aria-live="polite">&nbsp;</p>
+        <div class="acoes">
+          <button type="button" id="perf-nao-sei">Não sei</button>
+        </div>
+      </div>
+
+      <div id="perf-resultado" hidden>
+        <div class="fim">
+          <p class="fim-titulo" id="perf-titulo"></p>
+          <p id="perf-texto"></p>
+        </div>
+        <ul class="perf-historico" id="perf-historico"></ul>
+        <button type="button" class="principal" id="perf-proxima">Começar próxima rodada</button>
+        <button type="button" class="link perf-novo" id="perf-novo">Novo teste</button>
+        <h2 class="perf-subtitulo" id="perf-erradas-titulo">Bandeiras que você errou</h2>
+        <div class="grade" id="perf-erradas"></div>
+      </div>
+    </section>
+
+    <section class="todas" id="todas">
       <div class="todas-topo">
         <h2>Todas as bandeiras</h2>
         <button type="button" id="recomecar" class="link">Recomeçar</button>
@@ -72,6 +114,7 @@
 
   <script src="paises.js"></script>
   <script src="correcao.js"></script>
+  <script src="performance.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 // Guarda o app e todas as bandeiras no aparelho para funcionar sem internet.
 // Sempre tenta a versão mais nova primeiro; usa a cópia só se estiver offline.
-const CACHE_NAME = "bandeiras-v2";
+const CACHE_NAME = "bandeiras-v3";
 const ARQUIVOS = [
   "./",
   "./index.html",
@@ -8,6 +8,7 @@ const ARQUIVOS = [
   "./app.js",
   "./paises.js",
   "./correcao.js",
+  "./performance.js",
   "./manifest.json",
   "./apple-touch-icon.png",
   "./flags/ad.svg",
