@@ -36,7 +36,3 @@ O app aparece com o ícone 📚 e o nome "Estudos", abre em tela cheia e funcion
 ## Bandeiras do Mundo
 
 Jogo para aprender as bandeiras dos 197 países, sem tempo. Fica na pasta `bandeiras/` e abre em `/bandeiras/` no mesmo link do GitHub Pages. As imagens das bandeiras vêm do pacote [svg-country-flags](https://github.com/hjnilsson/country-flags), copiadas da Wikipédia.
-
-## Estudos III Etapa
-
-Resumos aprofundados do roteiro da III Etapa (8º ano), sem assistente: tópicos com explicações, tabelas, exemplos, exercícios resolvidos e revisão, além de quiz e flashcards por matéria. Fica na pasta `iii-etapa/` e abre em `/iii-etapa/` no mesmo link do GitHub Pages. O conteúdo de cada matéria está em `iii-etapa/conteudo/`, e o progresso fica salvo no aparelho (chave `estudos-iii-etapa`).
