@@ -586,8 +586,6 @@ button:focus-visible {
   display: block;
   width: 100%;
   height: 100%;
-  touch-action: none;
-  cursor: grab;
 }
 
 #mapa .mar { fill: var(--mar); }
@@ -597,85 +595,87 @@ button:focus-visible {
 #mapa .pais.falta { fill: var(--terra); }
 #mapa .pais.achado { fill: var(--verde-mapa); }
 #mapa .pais.faltou { fill: var(--vermelho-mapa); }
-#mapa .marca { stroke-width: 1.5px; fill: none; stroke: #d08a1e; }
 #mapa .marca.achado { fill: var(--verde-mapa); stroke: #1f7a3a; }
 #mapa .marca.faltou { fill: var(--vermelho-mapa); stroke: #8f2a20; }
 
-.mapa-zoom {
-  position: absolute;
-  right: 0.5rem;
-  top: 0.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.mapa-zoom button {
-  width: 2.2rem;
-  height: 2.2rem;
-  font: inherit;
-  font-size: 1.15rem;
-  font-weight: 700;
-  border-radius: 9px;
-  border: 1px solid var(--borda);
-  background: var(--cartao);
-  color: var(--texto);
-  cursor: pointer;
-  opacity: 0.92;
-}
-
 .mapa-lista-topo {
-  margin: 1.4rem 0 0.6rem;
+  margin: 1rem 0 0.5rem;
 }
 
 .mapa-lista-topo h2 {
   font-size: 1.05rem;
 }
 
-.mapa-grupo {
-  margin-bottom: 1rem;
-}
-
-.mapa-grupo h3 {
-  font-size: 0.95rem;
+.mapa-gaveta {
+  background: var(--cartao);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
   margin-bottom: 0.4rem;
 }
 
-.mapa-grupo h3 span {
+.mapa-gaveta summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mapa-gaveta summary::-webkit-details-marker {
+  display: none;
+}
+
+.mapa-gaveta summary::before {
+  content: "▸";
+  color: var(--suave);
+  transition: transform 0.15s;
+}
+
+.mapa-gaveta[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.mapa-gaveta summary span {
+  margin-left: auto;
   color: var(--suave);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  margin-left: 0.3rem;
 }
 
-.mapa-grupo ol {
+.mapa-gaveta ul {
   list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 0.3rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0 0.7rem 0.7rem;
 }
 
-.mapa-grupo li {
-  font-size: 0.82rem;
+.mapa-gaveta li {
+  font-size: 0.8rem;
   line-height: 1.2;
-  padding: 0.35rem 0.5rem;
-  min-height: 1.95rem;
-  border-radius: 7px;
-  border: 1px solid var(--borda);
-  background: var(--cartao);
-}
-
-.mapa-grupo li.achado {
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--certo);
   background: var(--certo-fundo);
-  border-color: var(--certo);
   color: var(--certo);
-  font-weight: 700;
+  font-weight: 600;
 }
 
-.mapa-grupo li.faltou {
-  background: var(--errado-fundo);
+.mapa-gaveta li.faltou {
   border-color: var(--errado);
+  background: var(--errado-fundo);
   color: var(--errado);
+}
+
+.mapa-gaveta li.vazio {
+  border: none;
+  background: none;
+  color: var(--suave);
+  font-weight: 400;
+  padding-left: 0;
 }
 
 /* No computador o mapa usa a tela toda */

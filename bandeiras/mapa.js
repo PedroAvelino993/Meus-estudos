@@ -43,8 +43,7 @@ const mapaEls = {
   filtros: me("mapa-filtros"), topo: me("mapa-topo"), resposta: me("mapa-resposta"), aviso: me("mapa-aviso"),
   desistir: me("mapa-desistir"), fim: me("mapa-fim"), fimTitulo: me("mapa-fim-titulo"),
   fimTexto: me("mapa-fim-texto"), deNovo: me("mapa-de-novo"),
-  caixa: me("mapa-caixa"), svg: me("mapa"), lista: me("mapa-lista"), recomecar: me("mapa-recomecar"),
-  mais: me("mapa-mais"), menos: me("mapa-menos"), centro: me("mapa-centro")
+  caixa: me("mapa-caixa"), svg: me("mapa"), lista: me("mapa-lista"), recomecar: me("mapa-recomecar")
 };
 
 const doJogoMapa = () =>
@@ -145,8 +144,7 @@ function avisoMapa(texto) {
 const SVG = "http://www.w3.org/2000/svg";
 const formas = {};   // código → <path>
 const marcas = {};   // código → <circle> dos países pequenos
-let vista = null;    // { x, y, w, h } do viewBox
-let base = null;     // enquadramento do filtro atual
+let vista = null;    // { x, y, w, h } do viewBox (mapa parado, sem zoom)
 
 function desenharMapa() {
   const svg = mapaEls.svg;
@@ -188,19 +186,19 @@ function pintar() {
     if (formas[c]) formas[c].setAttribute("class", "pais " + estado);
     if (marcas[c]) {
       marcas[c].setAttribute("class", "marca " + estado);
-      marcas[c].style.display = estado === "fora" ? "none" : "";
+      // Só aparece depois de achado (verde) ou de desistir (vermelho)
+      marcas[c].style.display = estado === "achado" || estado === "faltou" ? "" : "none";
     }
   }
 }
 
 function enquadrar() {
   const q = mapa.filtro === "Todos" ? [0, 0, MAPA.w, MAPA.h] : MAPA.quadros[mapa.filtro];
-  base = { x: q[0], y: q[1], w: q[2], h: q[3] };
-  vista = { ...base };
+  vista = { x: q[0], y: q[1], w: q[2], h: q[3] };
   // Caixa com o formato do pedaço de mapa, sem faixas vazias
   const caixa = mapaEls.caixa;
-  const altura = caixa.clientWidth * (base.h / base.w);
-  caixa.style.height = Math.round(Math.min(window.innerHeight * 0.62, Math.max(220, altura))) + "px";
+  const altura = caixa.clientWidth * (vista.h / vista.w);
+  caixa.style.height = Math.round(Math.min(window.innerHeight * 0.62, Math.max(140, altura))) + "px";
   aplicarVista();
 }
 
@@ -220,87 +218,11 @@ function escalaTela() {
   return Math.min(caixa.width / vista.w, caixa.height / vista.h);
 }
 
-function zoom(fator, cx, cy) {
-  const maxW = Math.max(base.w, MAPA.w) * 1.1;
-  const minW = base.w / 12;
-  const novoW = Math.min(maxW, Math.max(minW, vista.w / fator));
-  const f = novoW / vista.w;
-  if (cx === undefined) {
-    cx = vista.x + vista.w / 2;
-    cy = vista.y + vista.h / 2;
-  }
-  vista = {
-    x: cx - (cx - vista.x) * f,
-    y: cy - (cy - vista.y) * f,
-    w: vista.w * f,
-    h: vista.h * f
-  };
-  aplicarVista();
-}
-
-// Ponto do mapa embaixo de um ponto da tela
-function pontoDoMapa(clienteX, clienteY) {
-  const caixa = mapaEls.svg.getBoundingClientRect();
-  const escala = escalaTela();
-  const sobraX = (caixa.width - vista.w * escala) / 2;
-  const sobraY = (caixa.height - vista.h * escala) / 2;
-  return {
-    x: vista.x + (clienteX - caixa.left - sobraX) / escala,
-    y: vista.y + (clienteY - caixa.top - sobraY) / escala
-  };
-}
-
-// Arrastar com um dedo, pinça com dois, roda do mouse
-const dedos = new Map();
-let pinca = null;
-
-mapaEls.svg.addEventListener("pointerdown", (e) => {
-  mapaEls.svg.setPointerCapture(e.pointerId);
-  dedos.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (dedos.size === 2) {
-    const [a, b] = [...dedos.values()];
-    pinca = { dist: Math.hypot(a.x - b.x, a.y - b.y) };
-  }
-});
-
-mapaEls.svg.addEventListener("pointermove", (e) => {
-  const antes = dedos.get(e.pointerId);
-  if (!antes) return;
-  const agora = { x: e.clientX, y: e.clientY };
-  dedos.set(e.pointerId, agora);
-  if (dedos.size === 1) {
-    const escala = escalaTela();
-    vista.x -= (agora.x - antes.x) / escala;
-    vista.y -= (agora.y - antes.y) / escala;
-    aplicarVista();
-  } else if (dedos.size === 2 && pinca) {
-    const [a, b] = [...dedos.values()];
-    const dist = Math.hypot(a.x - b.x, a.y - b.y);
-    const meio = pontoDoMapa((a.x + b.x) / 2, (a.y + b.y) / 2);
-    if (pinca.dist > 0) zoom(dist / pinca.dist, meio.x, meio.y);
-    pinca.dist = dist;
-  }
-});
-
-function soltar(e) {
-  dedos.delete(e.pointerId);
-  if (dedos.size < 2) pinca = null;
-}
-mapaEls.svg.addEventListener("pointerup", soltar);
-mapaEls.svg.addEventListener("pointercancel", soltar);
-
-mapaEls.svg.addEventListener("wheel", (e) => {
-  e.preventDefault();
-  const p = pontoDoMapa(e.clientX, e.clientY);
-  zoom(e.deltaY < 0 ? 1.25 : 0.8, p.x, p.y);
-}, { passive: false });
-
-mapaEls.mais.addEventListener("click", () => zoom(1.5));
-mapaEls.menos.addEventListener("click", () => zoom(1 / 1.5));
-mapaEls.centro.addEventListener("click", enquadrar);
 window.addEventListener("resize", () => vista && aplicarVista());
 
-// ---------- Lista dos achados (como a tabela do JetPunk) ----------
+// ---------- Lista dos achados: uma gaveta por continente ----------
+
+const gavetasAbertas = new Set();
 
 function atualizarListaMapa() {
   const feitos = new Set(achadosAgora());
@@ -310,31 +232,37 @@ function atualizarListaMapa() {
   for (const regiao of regioes) {
     const paises = PAISES.filter((p) => regiaoNoMapa(p) === regiao)
       .sort((a, b) => a.n.localeCompare(b.n, "pt"));
+    const mostrar = paises.filter((p) => feitos.has(p.c) || desistiu);
     const certos = paises.filter((p) => feitos.has(p.c)).length;
 
-    const grupo = document.createElement("section");
-    grupo.className = "mapa-grupo";
-    const titulo = document.createElement("h3");
-    titulo.textContent = `${regiao} `;
+    const gaveta = document.createElement("details");
+    gaveta.className = "mapa-gaveta";
+    gaveta.open = gavetasAbertas.has(regiao);
+    gaveta.addEventListener("toggle", () => {
+      if (gaveta.open) gavetasAbertas.add(regiao);
+      else gavetasAbertas.delete(regiao);
+    });
+    const titulo = document.createElement("summary");
+    titulo.textContent = regiao;
     const conta = document.createElement("span");
     conta.textContent = `${certos} / ${paises.length}`;
     titulo.appendChild(conta);
-    const casas = document.createElement("ol");
-    for (const p of paises) {
+
+    const nomes = document.createElement("ul");
+    for (const p of mostrar) {
       const li = document.createElement("li");
-      if (feitos.has(p.c)) {
-        li.className = "achado";
-        li.textContent = p.n;
-      } else if (desistiu) {
-        li.className = "faltou";
-        li.textContent = p.n;
-      } else {
-        li.innerHTML = "&nbsp;";
-      }
-      casas.appendChild(li);
+      li.className = feitos.has(p.c) ? "achado" : "faltou";
+      li.textContent = p.n;
+      nomes.appendChild(li);
     }
-    grupo.append(titulo, casas);
-    mapaEls.lista.appendChild(grupo);
+    if (!mostrar.length) {
+      const vazio = document.createElement("li");
+      vazio.className = "vazio";
+      vazio.textContent = "Nenhum ainda.";
+      nomes.appendChild(vazio);
+    }
+    gaveta.append(titulo, nomes);
+    mapaEls.lista.appendChild(gaveta);
   }
 }
 
