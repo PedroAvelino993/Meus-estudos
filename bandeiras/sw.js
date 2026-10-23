@@ -1,6 +1,6 @@
 // Guarda o app e todas as bandeiras no aparelho para funcionar sem internet.
 // Sempre tenta a versão mais nova primeiro; usa a cópia só se estiver offline.
-const CACHE_NAME = "bandeiras-v5";
+const CACHE_NAME = "bandeiras-v6";
 const ARQUIVOS = [
   "./",
   "./index.html",
@@ -213,7 +213,8 @@ const ARQUIVOS = [
 ];
 
 self.addEventListener("install", (evento) => {
-  evento.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ARQUIVOS)));
+  // "reload" para não guardar uma cópia velha que estava no cache do navegador
+  evento.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ARQUIVOS.map((url) => new Request(url, { cache: "reload" })))));
   self.skipWaiting();
 });
 
@@ -227,13 +228,15 @@ self.addEventListener("activate", (evento) => {
 
 self.addEventListener("fetch", (evento) => {
   if (evento.request.method !== "GET") return;
+  // "no-cache": confere com o site antes de usar o cache do navegador, para a página
+  // nova nunca rodar com um script velho
   evento.respondWith(
-    fetch(evento.request)
+    fetch(evento.request.url, { cache: "no-cache", credentials: "same-origin" })
       .then((resposta) => {
         const copia = resposta.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(evento.request, copia));
         return resposta;
       })
-      .catch(() => caches.match(evento.request))
+      .catch(() => caches.match(evento.request, { ignoreSearch: true }))
   );
 });
