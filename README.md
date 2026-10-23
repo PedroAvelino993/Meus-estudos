@@ -36,3 +36,5 @@ O app aparece com o ícone 📚 e o nome "Estudos", abre em tela cheia e funcion
 ## Bandeiras do Mundo
 
 Jogo para aprender as bandeiras dos 197 países, sem tempo. Fica na pasta `bandeiras/` e abre em `/bandeiras/` no mesmo link do GitHub Pages. As imagens das bandeiras vêm do pacote [svg-country-flags](https://github.com/hjnilsson/country-flags), copiadas da Wikipédia.
+
+A aba **Países do mundo** é um mapa no estilo do JetPunk, sem cronômetro: você digita o nome de um país (não precisa de Enter, e erros pequenos de digitação valem) e ele fica verde no mapa. Dá para jogar o mundo todo ou um continente. O mapa vem do [Natural Earth](https://www.naturalearthdata.com/) (domínio público), pelo pacote [world-atlas](https://github.com/topojson/world-atlas).

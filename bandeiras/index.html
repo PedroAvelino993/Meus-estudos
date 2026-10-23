@@ -25,6 +25,12 @@
   </header>
 
   <main>
+    <div class="abas" role="tablist" aria-label="Jogo">
+      <button type="button" role="tab" id="aba-bandeiras" aria-selected="true">🏳️ Bandeiras</button>
+      <button type="button" role="tab" id="aba-mapa" aria-selected="false">🗺️ Países do mundo</button>
+    </div>
+
+    <div id="modo-bandeiras">
     <nav class="filtros" id="filtros" aria-label="Continentes"></nav>
 
     <section class="mista" id="mista" hidden>
@@ -110,11 +116,48 @@
       <p class="ajuda">Toque numa bandeira para tentar ela agora.</p>
       <div class="grade" id="grade"></div>
     </section>
+    </div>
+
+    <div id="modo-mapa" hidden>
+      <nav class="filtros" id="mapa-filtros" aria-label="Continentes do mapa"></nav>
+
+      <div class="mapa-topo" id="mapa-topo">
+        <label for="mapa-resposta" class="escondido">Nome do país</label>
+        <input id="mapa-resposta" type="text" placeholder="Digite um país"
+               autocomplete="off" autocorrect="off" autocapitalize="off"
+               spellcheck="false" enterkeyhint="done">
+        <button type="button" id="mapa-desistir" class="desistir">Desistir</button>
+      </div>
+      <p class="mapa-aviso" id="mapa-aviso" aria-live="polite">&nbsp;</p>
+
+      <div class="mapa-caixa" id="mapa-caixa">
+        <svg id="mapa" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mapa-múndi"></svg>
+        <div class="mapa-zoom">
+          <button type="button" id="mapa-mais" aria-label="Aproximar">+</button>
+          <button type="button" id="mapa-menos" aria-label="Afastar">−</button>
+          <button type="button" id="mapa-centro" aria-label="Voltar ao início">⟲</button>
+        </div>
+      </div>
+
+      <section class="fim mapa-fim" id="mapa-fim" hidden>
+        <p class="fim-titulo" id="mapa-fim-titulo"></p>
+        <p id="mapa-fim-texto"></p>
+        <button type="button" class="principal" id="mapa-de-novo">Jogar de novo</button>
+      </section>
+
+      <div class="todas-topo mapa-lista-topo">
+        <h2>Países que você achou</h2>
+        <button type="button" id="mapa-recomecar" class="link">Recomeçar</button>
+      </div>
+      <div id="mapa-lista"></div>
+    </div>
   </main>
 
   <script src="paises.js"></script>
   <script src="correcao.js"></script>
   <script src="performance.js"></script>
   <script src="app.js"></script>
+  <script src="mapa-dados.js"></script>
+  <script src="mapa.js"></script>
 </body>
 </html>

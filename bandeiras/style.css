@@ -468,3 +468,217 @@ button:focus-visible {
   outline: 3px solid var(--destaque);
   outline-offset: 1px;
 }
+
+/* Abas: Bandeiras / Países do mundo */
+.abas {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.9rem;
+  padding: 0.25rem;
+  background: var(--cartao);
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+}
+
+.abas button {
+  flex: 1;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.55rem 0.4rem;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: var(--suave);
+  cursor: pointer;
+}
+
+.abas button[aria-selected="true"] {
+  background: var(--azul);
+  color: white;
+}
+
+@media (prefers-color-scheme: dark) {
+  .abas button[aria-selected="true"] {
+    background: var(--destaque);
+    color: #0d1520;
+  }
+}
+
+/* Países do mundo */
+:root {
+  --mar: #cfe3f3;
+  --terra: #f3efe4;
+  --terra-fora: #d4d6d9;
+  --fronteira: #8b97a3;
+  --verde-mapa: #3fae5a;
+  --vermelho-mapa: #e0574a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mar: #13283d;
+    --terra: #3b4757;
+    --terra-fora: #222c38;
+    --fronteira: #0d1520;
+    --verde-mapa: #3fbf66;
+    --vermelho-mapa: #e0574a;
+  }
+}
+
+.mapa-topo {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.3rem 0 0.2rem;
+  background: var(--fundo);
+}
+
+.desistir {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--borda);
+  background: var(--cartao);
+  color: var(--texto);
+  cursor: pointer;
+}
+
+.desistir.confirmar {
+  border-color: var(--errado);
+  color: var(--errado);
+  font-weight: 700;
+}
+
+.mapa-aviso {
+  min-height: 1.3rem;
+  font-size: 0.85rem;
+  color: var(--suave);
+  margin: 0.15rem 0 0.35rem;
+}
+
+.mapa-fim {
+  margin-top: 0.8rem;
+}
+
+.mapa-topo[hidden] {
+  display: none;
+}
+
+.mapa-fim.desistiu {
+  background: var(--cartao);
+  border-color: var(--borda);
+}
+
+.mapa-caixa {
+  position: relative;
+  background: var(--mar);
+  border: 1px solid var(--borda);
+  border-radius: 14px;
+  overflow: hidden;
+  height: 300px;
+}
+
+#mapa {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+#mapa .mar { fill: var(--mar); }
+#mapa .terra-fora { fill: var(--terra-fora); stroke: var(--fronteira); stroke-width: 0.5px; }
+#mapa .pais { stroke: var(--fronteira); stroke-width: 0.6px; stroke-linejoin: round; }
+#mapa .pais.fora { fill: var(--terra-fora); }
+#mapa .pais.falta { fill: var(--terra); }
+#mapa .pais.achado { fill: var(--verde-mapa); }
+#mapa .pais.faltou { fill: var(--vermelho-mapa); }
+#mapa .marca { stroke-width: 1.5px; fill: none; stroke: #d08a1e; }
+#mapa .marca.achado { fill: var(--verde-mapa); stroke: #1f7a3a; }
+#mapa .marca.faltou { fill: var(--vermelho-mapa); stroke: #8f2a20; }
+
+.mapa-zoom {
+  position: absolute;
+  right: 0.5rem;
+  top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.mapa-zoom button {
+  width: 2.2rem;
+  height: 2.2rem;
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 700;
+  border-radius: 9px;
+  border: 1px solid var(--borda);
+  background: var(--cartao);
+  color: var(--texto);
+  cursor: pointer;
+  opacity: 0.92;
+}
+
+.mapa-lista-topo {
+  margin: 1.4rem 0 0.6rem;
+}
+
+.mapa-lista-topo h2 {
+  font-size: 1.05rem;
+}
+
+.mapa-grupo {
+  margin-bottom: 1rem;
+}
+
+.mapa-grupo h3 {
+  font-size: 0.95rem;
+  margin-bottom: 0.4rem;
+}
+
+.mapa-grupo h3 span {
+  color: var(--suave);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.3rem;
+}
+
+.mapa-grupo ol {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.3rem;
+}
+
+.mapa-grupo li {
+  font-size: 0.82rem;
+  line-height: 1.2;
+  padding: 0.35rem 0.5rem;
+  min-height: 1.95rem;
+  border-radius: 7px;
+  border: 1px solid var(--borda);
+  background: var(--cartao);
+}
+
+.mapa-grupo li.achado {
+  background: var(--certo-fundo);
+  border-color: var(--certo);
+  color: var(--certo);
+  font-weight: 700;
+}
+
+.mapa-grupo li.faltou {
+  background: var(--errado-fundo);
+  border-color: var(--errado);
+  color: var(--errado);
+}
+
+/* No computador o mapa usa a tela toda */
+body.no-mapa main {
+  max-width: 1000px;
+}
