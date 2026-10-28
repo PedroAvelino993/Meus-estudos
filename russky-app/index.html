@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Russky — aprenda russo do zero</title>
+    <meta name="description" content="Aprenda russo do zero em português: alfabeto cirílico, pronúncia, vocabulário, gramática, conversas com personagens e revisão espaçada." />
+    <meta name="theme-color" content="#fbf7f0" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Russky" />
+    <script>
+      // Tema antes do React carregar, para não piscar
+      try {
+        var s = JSON.parse(localStorage.getItem("russky:v1") || "{}").settings || {};
+        var dark = s.theme === "dark" || ((!s.theme || s.theme === "system") && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root">
+      <div style="min-height:100vh;display:grid;place-items:center;font-family:system-ui;color:#8d93a1">Carregando o Russky…</div>
+    </div>
+    <noscript>O Russky precisa de JavaScript para funcionar.</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
