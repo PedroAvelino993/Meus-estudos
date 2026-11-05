@@ -874,3 +874,31 @@ export function talk(s0: GameState, raw: string): TalkResult {
   const u = understand(typed, e, m, c, playerCtx(s0, c.id));
   return { state: withTyped(s0, say(s0, u.optionId), typed), understood: u };
 }
+
+// ---------- Falas geradas pela IA ----------
+
+/**
+ * Junta as falas prontas do personagem a partir de `from` numa só entrada (que a IA vai escrever).
+ * Devolve o estado e o índice da entrada. As linhas do sistema ("Você descobriu…") ficam onde estão.
+ */
+export function collapseNpcLines(s: GameState, from: number, text: string): { state: GameState; index: number; lines: string[] } {
+  const e = s.encounter;
+  if (!e) return { state: s, index: -1, lines: [] };
+  const tail = e.log.slice(from);
+  const npc = tail.filter((l) => l.who === "npc");
+  if (!npc.length) return { state: s, index: -1, lines: [] };
+  const firstIdx = from + tail.findIndex((l) => l.who === "npc");
+  const last = npc[npc.length - 1];
+  const merged = { who: "npc" as const, text, reaction: last.reaction, delta: npc.find((l) => l.delta)?.delta };
+  const log = [...e.log.slice(0, from), ...tail.filter((l) => l.who !== "npc")];
+  log.splice(firstIdx, 0, merged);
+  return { state: { ...s, encounter: { ...e, log } }, index: firstIdx, lines: npc.map((l) => l.text) };
+}
+
+export function setLogText(s: GameState, index: number, text: string): GameState {
+  const e = s.encounter;
+  if (!e || !e.log[index]) return s;
+  const log = [...e.log];
+  log[index] = { ...log[index], text };
+  return { ...s, encounter: { ...e, log } };
+}

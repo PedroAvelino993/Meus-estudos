@@ -10,6 +10,7 @@ import { buy, cashOut, equip, heatFactor, itemLocked, levelOf, lootOptions, miss
 import { EVENTS } from "../content/story";
 import { LOOT_LABEL, TACTIC_LABEL, type Tactic } from "../core/types";
 import { exportSave, importSave, removeSlot } from "../store";
+import { AI_MODELS, type AiSettings, aiActive, loadAi, saveAi, testKey } from "../ai";
 import { ACH_ICONS, Bar, fmt, sfx, useGame } from "../ui";
 import { playerLook } from "../screens/Home";
 import { PhoneHeader } from "./Phone";
@@ -526,6 +527,7 @@ export function SettingsApp({ back }: { back: () => void }) {
         </button>
         {msg && <p className="tiny gold" style={{ marginTop: 6 }}>{msg}</p>}
       </div>
+      <AiSettingsCard />
       <div className="card tight" style={{ marginTop: 10 }}>
         <b className="small">Preferências</b>
         {(
@@ -566,6 +568,83 @@ export function SettingsApp({ back }: { back: () => void }) {
       <p className="tiny muted center" style={{ marginTop: 14 }}>
         The Art of Persuasion · golpes, contas e cartões 100% fictícios
       </p>
+    </div>
+  );
+}
+
+function AiSettingsCard() {
+  const [a, setA] = useState<AiSettings>(loadAi);
+  const [status, setStatus] = useState("");
+  const [testing, setTesting] = useState(false);
+  const update = (n: AiSettings) => {
+    setA(n);
+    saveAi(n);
+  };
+  return (
+    <div className="card tight" style={{ marginTop: 10 }}>
+      <div className="row between">
+        <b className="small">IA dos personagens</b>
+        <span className={`chip ${aiActive(a) ? "green" : ""}`}>{aiActive(a) ? "ligada" : "desligada"}</span>
+      </div>
+      <p className="tiny muted" style={{ marginTop: 4 }}>
+        Com uma chave da API da Anthropic, cada fala dos personagens é escrita na hora por Claude, reagindo ao que você digitou. Sem chave, o jogo usa as falas prontas. Crie a chave em console.anthropic.com (é cobrada na sua conta por uso). Ela fica salva só neste navegador e não entra no salvamento exportado.
+      </p>
+      <input
+        className="input"
+        type="password"
+        autoComplete="off"
+        style={{ width: "100%", marginTop: 8, height: 40 }}
+        placeholder="Chave da API (começa com sk-ant-)"
+        value={a.apiKey}
+        onChange={(e) => update({ ...a, apiKey: e.target.value })}
+        aria-label="Chave da API da Anthropic"
+      />
+      <label className="row between small" style={{ marginTop: 8 }}>
+        Modelo
+        <select className="input" style={{ height: 34 }} value={a.model} onChange={(e) => update({ ...a, model: e.target.value })}>
+          {AI_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name} — {m.note}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="row between small" style={{ marginTop: 8 }}>
+        Usar a IA nas conversas
+        <input type="checkbox" checked={a.enabled} onChange={(e) => update({ ...a, enabled: e.target.checked })} />
+      </label>
+      <div className="row wrap" style={{ marginTop: 8 }}>
+        <button
+          className="btn sm"
+          disabled={!a.apiKey.trim() || testing}
+          onClick={async () => {
+            setTesting(true);
+            setStatus("Testando…");
+            try {
+              const r = await testKey(a);
+              setStatus(`Funcionando: «${r}»`);
+            } catch (err) {
+              setStatus(err instanceof Error ? err.message : "Falhou.");
+            } finally {
+              setTesting(false);
+            }
+          }}
+        >
+          Testar chave
+        </button>
+        {a.apiKey && (
+          <button
+            className="btn sm danger"
+            onClick={() => {
+              update({ ...a, apiKey: "" });
+              setStatus("Chave apagada deste navegador.");
+            }}
+          >
+            Apagar chave
+          </button>
+        )}
+      </div>
+      {status && <p className="tiny gold" style={{ marginTop: 6 }}>{status}</p>}
     </div>
   );
 }

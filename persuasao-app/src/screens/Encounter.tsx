@@ -7,7 +7,8 @@ import Portrait from "../components/Portrait";
 import { character, district } from "../content";
 import { persuasionScore, resultOf, type LogEntry } from "../core/encounter";
 import { understand } from "../core/understand";
-import { anyMission, finishEncounter, heatFactor, leaveEncounter, playerCtx, talk } from "../core/game";
+import { anyMission, collapseNpcLines, finishEncounter, heatFactor, leaveEncounter, playerCtx, setLogText, talk } from "../core/game";
+import { aiActive, loadAi, npcReply } from "../ai";
 import { moodFace, tellsOf } from "../core/persona";
 import { ATTRS, ATTR_LABEL, LOOT_LABEL, OUTCOME_LABEL, TACTIC_LABEL, type Attr, type Attrs } from "../core/types";
 import { Bar, Money, fmt, sfx, useGame } from "../ui";
@@ -45,6 +46,7 @@ export default function Encounter() {
 
   // Revela as falas aos poucos, como numa conversa de verdade
   const [shown, setShown] = useState(() => Math.max(0, e.log.length - 3));
+  const [aiLive, setAiLive] = useState<{ index: number; text: string } | null>(null);
   const instant = prefs.reducedMotion || prefs.textSpeed === "rapido";
   const chatRef = useRef<HTMLDivElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
@@ -62,8 +64,8 @@ export default function Encounter() {
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
   }, [shown, e.pending, e.counter, e.status]);
-  const typing = shown < e.log.length && e.log[shown].who === "npc";
-  const busy = shown < e.log.length;
+  const typing = (shown < e.log.length && e.log[shown].who === "npc") || (!!aiLive && !aiLive.text);
+  const busy = shown < e.log.length || !!aiLive;
 
   const visibleLog = e.log.slice(0, shown);
   const lastNpc = [...visibleLog].reverse().find((l) => l.who === "npc");
@@ -78,17 +80,67 @@ export default function Encounter() {
     if (!busy && e.status === "active" && window.innerWidth >= 900) inputRef.current?.focus();
   }, [busy, e.status]);
 
+  // Falas geradas na hora pela IA (se o jogador configurou a chave em Ajustes)
+  const [ai] = useState(loadAi);
+  const [aiBroken, setAiBroken] = useState(false);
+  const aiOn = aiActive(ai) && !aiBroken;
+  const openedRef = useRef(false);
+
+  const voice = async (from: number, typed: string | null, opening: boolean) => {
+    let info = { index: -1, lines: [] as string[] };
+    let snapshot = s;
+    act((g) => {
+      snapshot = g;
+      const r = collapseNpcLines(g, from, "");
+      info = { index: r.index, lines: r.lines };
+      if (r.index < 0) return g;
+      return opening ? { ...r.state, encounter: { ...r.state.encounter!, flags: [...r.state.encounter!.flags, "ai-open"] } } : r.state;
+    });
+    if (info.index < 0) return;
+    const enc = snapshot.encounter!;
+    const lastNpc = [...enc.log.slice(from)].reverse().find((l) => l.who === "npc");
+    const index = info.index;
+    setAiLive({ index, text: "" });
+    try {
+      const text = await npcReply({
+        settings: ai,
+        character: c,
+        mission: m,
+        history: opening ? [] : enc.log.slice(0, typed ? from : from),
+        typed,
+        direction: { reaction: lastNpc?.reaction ?? "neutral", lines: info.lines, attrs: enc.attrs, outcome: enc.outcome, done: enc.status === "done", question: enc.pending?.kind === "probe", opening },
+        onText: (t) => setAiLive({ index, text: t }),
+      });
+      act((g) => setLogText(g, index, text));
+    } catch (err) {
+      act((g) => setLogText(g, index, info.lines.join(" ")));
+      setAiBroken(true);
+      toast({ text: `${err instanceof Error ? err.message : "Erro na IA."} Usando as falas prontas nesta conversa.`, tone: "red", icon: TriangleAlert });
+    } finally {
+      setAiLive(null);
+    }
+  };
+
+  // Primeira fala do personagem, escrita na hora
+  useEffect(() => {
+    if (!aiOn || openedRef.current || e.turn > 0 || e.flags.includes("ai-open")) return;
+    openedRef.current = true;
+    void voice(0, null, true);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const send = () => {
     const text = draft.trim();
     if (busy || !text || e.status !== "active") return;
     sfx("tap", prefs.sound);
     const before = s.encounter!;
+    const from = before.log.length;
     let after = before;
     act((g) => {
       const r = talk(g, text);
       after = r.state.encounter ?? before;
       return r.state;
     });
+    if (aiOn && after !== before) void voice(from, text, false);
     setDraft("");
     setHint(false);
     if (after.liesCaught > before.liesCaught) {
@@ -204,14 +256,16 @@ export default function Encounter() {
 
       <section className="card" ref={sectionRef} style={{ padding: 0, overflow: "hidden", scrollMarginTop: 64 }}>
         <div className="chat" ref={chatRef} aria-live="polite">
-          {visibleLog.map((l: LogEntry, i) => (
+          {visibleLog.map((l: LogEntry, i) =>
+            aiLive && aiLive.index === i && !aiLive.text ? null : (
             <div key={i} className={`bubble ${l.who} ${l.kind ?? ""}`}>
               {l.who === "me" && l.tactic && <span className="tag">{TACTIC_LABEL[l.tactic]}</span>}
               {l.who === "npc" && i > 0 && <span className="tag">{c.nick ?? c.name.split(" ")[0]}</span>}
-              {l.text}
+              {aiLive && aiLive.index === i ? aiLive.text : l.text}
               {exact && l.delta && l.who === "npc" && <Deltas d={l.delta} />}
             </div>
-          ))}
+            ),
+          )}
           {typing && (
             <div className="typing" aria-label="digitando">
               <i />
@@ -262,6 +316,9 @@ export default function Encounter() {
               </button>
             </div>
             <div className="row between composer-tools">
+              <span className={`chip ${aiOn ? "green" : ""}`} title={aiOn ? "As falas do personagem são escritas na hora pela IA" : "Configure a IA em Celular → Ajustes"}>
+                {aiOn ? "IA ao vivo" : "Falas prontas"}
+              </span>
               <button className="btn ghost sm" onClick={() => setHint((h) => !h)}>
                 <Lightbulb size={14} /> {hint ? "Esconder dica" : "Dica"}
               </button>
