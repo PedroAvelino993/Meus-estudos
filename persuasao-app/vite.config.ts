@@ -6,11 +6,12 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   base: "./",
   plugins: [react()],
+  worker: { format: "es" },
   build: {
     outDir: "../persuasao",
     emptyOutDir: true,
     target: "es2020",
-    chunkSizeWarningLimit: 900,
+    chunkSizeWarningLimit: 7000,
   },
   test: {
     environment: "node",

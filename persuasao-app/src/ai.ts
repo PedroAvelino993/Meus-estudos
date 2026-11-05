@@ -1,4 +1,5 @@
-// Falas geradas na hora por Claude (opcional, com a chave do próprio jogador).
+// Falas geradas na hora. Dois jeitos: uma IA gratuita que roda no próprio aparelho (padrão)
+// ou Claude, com a chave paga do próprio jogador.
 // O motor do jogo continua decidindo os números (confiança, desconfiança, desfecho);
 // a IA escreve o que o personagem diz, reagindo ao texto exato que o jogador digitou.
 // A chave fica só neste navegador (localStorage) e nunca entra no salvamento exportado.
@@ -7,6 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Character, Mission, Reaction } from "./core/types";
 import type { EncounterState, LogEntry } from "./core/encounter";
 import { OUTCOME_LABEL } from "./core/types";
+import { LOCAL_MODELS, hasWebGPU, localComplete, type LocalMessage } from "./local-llm";
 
 export const AI_MODELS = [
   { id: "claude-opus-5-5", name: "Claude Opus 5.5", note: "melhor escrita (padrão)" },
@@ -15,15 +17,20 @@ export const AI_MODELS = [
 ] as const;
 
 export interface AiSettings {
+  /** "local" = IA gratuita no aparelho; "claude" = API da Anthropic (paga). */
+  provider: "local" | "claude";
   apiKey: string;
   model: string;
+  localModel: string;
+  /** O modelo local já foi baixado e carregou pelo menos uma vez. */
+  localReady: boolean;
   enabled: boolean;
 }
 
 const KEY = "persuasao:ai";
 
 export function loadAi(): AiSettings {
-  const base: AiSettings = { apiKey: "", model: "claude-opus-5-5", enabled: true };
+  const base: AiSettings = { provider: "local", apiKey: "", model: "claude-opus-5-5", localModel: LOCAL_MODELS[1].id, localReady: false, enabled: true };
   try {
     return { ...base, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
   } catch {
@@ -40,7 +47,28 @@ export function saveAi(a: AiSettings) {
 }
 
 export function aiActive(a: AiSettings): boolean {
-  return a.enabled && a.apiKey.trim().length > 20;
+  if (!a.enabled) return false;
+  if (a.provider === "local") return a.localReady && hasWebGPU();
+  return a.apiKey.trim().length > 20;
+}
+
+export function aiName(a: AiSettings): string {
+  return a.provider === "local" ? `IA do aparelho (${LOCAL_MODELS.find((m) => m.id === a.localModel)?.name ?? "local"})` : AI_MODELS.find((m) => m.id === a.model)?.name ?? a.model;
+}
+
+/** Limpa o que modelos pequenos às vezes acrescentam: nome antes da fala, aspas, raciocínio. */
+export function cleanReply(raw: string, c: Character): string {
+  const first = c.nick ?? c.name.split(" ")[0];
+  let t = raw.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trim();
+  const names = [first, c.name, c.name.split(" ")[0]].map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  t = t.replace(new RegExp(`^\\**(${names})\\**\\s*[:：—-]\\s*`, "i"), "");
+  t = t.replace(/^["«“]+|["»”]+$/g, "").trim();
+  if (t.length > 420) {
+    const cut = t.slice(0, 420);
+    const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "));
+    t = end > 80 ? cut.slice(0, end + 1) : cut + "…";
+  }
+  return t;
 }
 
 const REACTION_TEXT: Record<Reaction, string> = {
@@ -146,9 +174,11 @@ export async function npcReply(opts: {
   typed: string | null;
   direction: Direction;
   onText: (text: string) => void;
+  onStatus?: (text: string) => void;
   signal?: AbortSignal;
 }): Promise<string> {
   const { settings, character: c, mission: m } = opts;
+  if (settings.provider === "local") return localReply(opts);
   const client = new Anthropic({ apiKey: settings.apiKey.trim(), dangerouslyAllowBrowser: true, maxRetries: 1, timeout: 60_000 });
   const first = c.nick ?? c.name.split(" ")[0];
   const messages = transcript(opts.history);
@@ -205,5 +235,32 @@ export async function testKey(settings: AiSettings): Promise<string> {
     if (e instanceof Anthropic.AuthenticationError) throw new AiError("Chave inválida.");
     if (e instanceof Anthropic.APIError) throw new AiError(`Erro da API (${e.status ?? "?"}): ${e.message}`);
     throw new AiError("Sem conexão com a API.");
+  }
+}
+
+/** Versão para a IA local: tudo vai no começo (modelos pequenos seguem melhor assim) e o histórico é curto. */
+async function localReply(opts: Parameters<typeof npcReply>[0]): Promise<string> {
+  const { settings, character: c, mission: m } = opts;
+  const first = c.nick ?? c.name.split(" ")[0];
+  const system = `${characterSheet(c, m)}\n\n${directionText(opts.direction, first)}\n\nAgora responda só com a fala de ${first}, em português do Brasil, em no máximo 3 frases curtas.`;
+  const hist = transcript(opts.history)
+    .slice(-10)
+    .map((x) => ({ role: x.role as "user" | "assistant", content: String(x.content) }));
+  while (hist.length && hist[0].role !== "user") hist.shift();
+  const messages: LocalMessage[] = [{ role: "system", content: system }, ...hist];
+  const last = opts.typed ?? "(Uma pessoa que você não conhece se aproxima e puxa conversa.)";
+  if (messages[messages.length - 1].role === "user") messages[messages.length - 1] = { role: "user", content: `${messages[messages.length - 1].content}\n${last}` };
+  else messages.push({ role: "user", content: last });
+  try {
+    const raw = await localComplete(settings.localModel, messages, (t) => opts.onText(cleanReply(t, c)), opts.onStatus);
+    const text = cleanReply(raw, c);
+    if (!text) throw new AiError("A IA do aparelho não respondeu.");
+    return text;
+  } catch (e) {
+    if (e instanceof AiError) throw e;
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/webgpu|gpu|adapter/i.test(msg)) throw new AiError("Este navegador não conseguiu usar a placa de vídeo (WebGPU).");
+    if (/memory|oom|allocation/i.test(msg)) throw new AiError("Faltou memória para o modelo. Tente o modelo Leve.");
+    throw new AiError(`A IA do aparelho falhou: ${msg.slice(0, 120)}`);
   }
 }

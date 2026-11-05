@@ -11,6 +11,7 @@ import { EVENTS } from "../content/story";
 import { LOOT_LABEL, TACTIC_LABEL, type Tactic } from "../core/types";
 import { exportSave, importSave, removeSlot } from "../store";
 import { AI_MODELS, type AiSettings, aiActive, loadAi, saveAi, testKey } from "../ai";
+import { LOCAL_MODELS, hasWebGPU, loadLocal, removeLocal } from "../local-llm";
 import { ACH_ICONS, Bar, fmt, sfx, useGame } from "../ui";
 import { playerLook } from "../screens/Home";
 import { PhoneHeader } from "./Phone";
@@ -575,11 +576,15 @@ export function SettingsApp({ back }: { back: () => void }) {
 function AiSettingsCard() {
   const [a, setA] = useState<AiSettings>(loadAi);
   const [status, setStatus] = useState("");
-  const [testing, setTesting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [showPaid, setShowPaid] = useState(a.provider === "claude");
+  const gpu = hasWebGPU();
   const update = (n: AiSettings) => {
     setA(n);
     saveAi(n);
   };
+  const local = LOCAL_MODELS.find((m) => m.id === a.localModel) ?? LOCAL_MODELS[1];
   return (
     <div className="card tight" style={{ marginTop: 10 }}>
       <div className="row between">
@@ -587,64 +592,142 @@ function AiSettingsCard() {
         <span className={`chip ${aiActive(a) ? "green" : ""}`}>{aiActive(a) ? "ligada" : "desligada"}</span>
       </div>
       <p className="tiny muted" style={{ marginTop: 4 }}>
-        Com uma chave da API da Anthropic, cada fala dos personagens é escrita na hora por Claude, reagindo ao que você digitou. Sem chave, o jogo usa as falas prontas. Crie a chave em console.anthropic.com (é cobrada na sua conta por uso). Ela fica salva só neste navegador e não entra no salvamento exportado.
+        Com a IA ligada, cada fala dos personagens é escrita na hora, reagindo ao que você digitou. Sem ela, o jogo usa as falas prontas.
       </p>
-      <input
-        className="input"
-        type="password"
-        autoComplete="off"
-        style={{ width: "100%", marginTop: 8, height: 40 }}
-        placeholder="Chave da API (começa com sk-ant-)"
-        value={a.apiKey}
-        onChange={(e) => update({ ...a, apiKey: e.target.value })}
-        aria-label="Chave da API da Anthropic"
-      />
-      <label className="row between small" style={{ marginTop: 8 }}>
-        Modelo
-        <select className="input" style={{ height: 34 }} value={a.model} onChange={(e) => update({ ...a, model: e.target.value })}>
-          {AI_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name} — {m.note}
-            </option>
-          ))}
-        </select>
-      </label>
+
+      <div className="card tight" style={{ marginTop: 8, borderColor: a.provider === "local" ? "var(--green)" : undefined }}>
+        <div className="row between">
+          <b className="small">Grátis: IA no próprio aparelho</b>
+          {a.provider === "local" && <span className="chip green">em uso</span>}
+        </div>
+        <p className="tiny muted" style={{ marginTop: 4 }}>
+          Sem conta, sem chave e sem pagar nada. O modelo é baixado uma vez e fica guardado no navegador (depois funciona até sem internet). Precisa de um navegador com WebGPU (Chrome ou Edge atualizados; no iPhone, iOS 26 ou mais novo). É mais simples que uma IA paga: às vezes escreve frases estranhas.
+        </p>
+        {!gpu && <p className="tiny red" style={{ marginTop: 6 }}>Este navegador não tem WebGPU. Tente o Chrome ou o Edge atualizados.</p>}
+        <label className="row between small" style={{ marginTop: 8 }}>
+          Modelo
+          <select className="input" style={{ height: 34, maxWidth: 210 }} value={a.localModel} disabled={busy} onChange={(e) => update({ ...a, localModel: e.target.value, localReady: false })}>
+            {LOCAL_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name} ({m.size})
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="tiny muted">{local.note}. Use Wi-Fi para baixar.</p>
+        {progress !== null && (
+          <div style={{ marginTop: 6 }}>
+            <Bar value={progress * 100} tone="green" label="Download do modelo" />
+          </div>
+        )}
+        <div className="row wrap" style={{ marginTop: 8 }}>
+          <button
+            className="btn sm primary"
+            disabled={!gpu || busy}
+            onClick={async () => {
+              setBusy(true);
+              setProgress(0);
+              setStatus("Preparando…");
+              try {
+                await loadLocal(a.localModel, (p, t) => {
+                  setProgress(p);
+                  setStatus(t);
+                });
+                update({ ...a, provider: "local", localReady: true, enabled: true });
+                setStatus("Pronto! A IA do aparelho está ligada.");
+              } catch (err) {
+                setStatus(`Não deu certo: ${err instanceof Error ? err.message.slice(0, 160) : "erro"}`);
+              } finally {
+                setBusy(false);
+                setProgress(null);
+              }
+            }}
+          >
+            {a.localReady && a.provider === "local" ? "Recarregar" : "Baixar e ativar"} ({local.size})
+          </button>
+          {a.localReady && (
+            <button
+              className="btn sm danger"
+              disabled={busy}
+              onClick={async () => {
+                await removeLocal(a.localModel);
+                update({ ...a, localReady: false });
+                setStatus("Modelo apagado deste aparelho.");
+              }}
+            >
+              Apagar modelo
+            </button>
+          )}
+        </div>
+      </div>
+
       <label className="row between small" style={{ marginTop: 8 }}>
         Usar a IA nas conversas
         <input type="checkbox" checked={a.enabled} onChange={(e) => update({ ...a, enabled: e.target.checked })} />
       </label>
-      <div className="row wrap" style={{ marginTop: 8 }}>
-        <button
-          className="btn sm"
-          disabled={!a.apiKey.trim() || testing}
-          onClick={async () => {
-            setTesting(true);
-            setStatus("Testando…");
-            try {
-              const r = await testKey(a);
-              setStatus(`Funcionando: «${r}»`);
-            } catch (err) {
-              setStatus(err instanceof Error ? err.message : "Falhou.");
-            } finally {
-              setTesting(false);
-            }
-          }}
-        >
-          Testar chave
-        </button>
-        {a.apiKey && (
-          <button
-            className="btn sm danger"
-            onClick={() => {
-              update({ ...a, apiKey: "" });
-              setStatus("Chave apagada deste navegador.");
-            }}
-          >
-            Apagar chave
-          </button>
-        )}
-      </div>
       {status && <p className="tiny gold" style={{ marginTop: 6 }}>{status}</p>}
+
+      <button className="btn ghost sm" style={{ marginTop: 6 }} onClick={() => setShowPaid((x) => !x)}>
+        {showPaid ? "Esconder" : "Mostrar"} a opção paga (Claude)
+      </button>
+      {showPaid && (
+        <div className="card tight" style={{ marginTop: 6, borderColor: a.provider === "claude" ? "var(--green)" : undefined }}>
+          <p className="tiny muted">
+            Escrita bem melhor, mas cobrada por uso na sua conta da Anthropic (console.anthropic.com). A chave fica só neste navegador.
+          </p>
+          <input
+            className="input"
+            type="password"
+            autoComplete="off"
+            style={{ width: "100%", marginTop: 6, height: 40 }}
+            placeholder="Chave da API (sk-ant-…)"
+            value={a.apiKey}
+            onChange={(e) => update({ ...a, apiKey: e.target.value })}
+            aria-label="Chave da API da Anthropic"
+          />
+          <label className="row between small" style={{ marginTop: 6 }}>
+            Modelo
+            <select className="input" style={{ height: 34, maxWidth: 210 }} value={a.model} onChange={(e) => update({ ...a, model: e.target.value })}>
+              {AI_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} — {m.note}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="row wrap" style={{ marginTop: 6 }}>
+            <button
+              className="btn sm"
+              disabled={!a.apiKey.trim() || busy}
+              onClick={async () => {
+                setBusy(true);
+                setStatus("Testando…");
+                try {
+                  const r = await testKey(a);
+                  update({ ...a, provider: "claude", enabled: true });
+                  setStatus(`Funcionando: «${r}». Usando Claude.`);
+                } catch (err) {
+                  setStatus(err instanceof Error ? err.message : "Falhou.");
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Testar e usar Claude
+            </button>
+            {a.provider === "claude" && (
+              <button className="btn sm" onClick={() => update({ ...a, provider: "local" })}>
+                Voltar para a IA grátis
+              </button>
+            )}
+            {a.apiKey && (
+              <button className="btn sm danger" onClick={() => update({ ...a, apiKey: "", provider: "local" })}>
+                Apagar chave
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

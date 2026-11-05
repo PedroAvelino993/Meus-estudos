@@ -47,6 +47,7 @@ export default function Encounter() {
   // Revela as falas aos poucos, como numa conversa de verdade
   const [shown, setShown] = useState(() => Math.max(0, e.log.length - 3));
   const [aiLive, setAiLive] = useState<{ index: number; text: string } | null>(null);
+  const [aiStatus, setAiStatus] = useState("");
   const instant = prefs.reducedMotion || prefs.textSpeed === "rapido";
   const chatRef = useRef<HTMLDivElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
@@ -110,6 +111,7 @@ export default function Encounter() {
         typed,
         direction: { reaction: lastNpc?.reaction ?? "neutral", lines: info.lines, attrs: enc.attrs, outcome: enc.outcome, done: enc.status === "done", question: enc.pending?.kind === "probe", opening },
         onText: (t) => setAiLive({ index, text: t }),
+        onStatus: setAiStatus,
       });
       act((g) => setLogText(g, index, text));
     } catch (err) {
@@ -118,6 +120,7 @@ export default function Encounter() {
       toast({ text: `${err instanceof Error ? err.message : "Erro na IA."} Usando as falas prontas nesta conversa.`, tone: "red", icon: TriangleAlert });
     } finally {
       setAiLive(null);
+      setAiStatus("");
     }
   };
 
@@ -266,6 +269,7 @@ export default function Encounter() {
             </div>
             ),
           )}
+          {aiStatus && <div className="bubble sys">{aiStatus}</div>}
           {typing && (
             <div className="typing" aria-label="digitando">
               <i />
@@ -317,7 +321,7 @@ export default function Encounter() {
             </div>
             <div className="row between composer-tools">
               <span className={`chip ${aiOn ? "green" : ""}`} title={aiOn ? "As falas do personagem são escritas na hora pela IA" : "Configure a IA em Celular → Ajustes"}>
-                {aiOn ? "IA ao vivo" : "Falas prontas"}
+                {aiOn ? (ai.provider === "local" ? "IA do aparelho" : "IA Claude") : "Falas prontas"}
               </span>
               <button className="btn ghost sm" onClick={() => setHint((h) => !h)}>
                 <Lightbulb size={14} /> {hint ? "Esconder dica" : "Dica"}
