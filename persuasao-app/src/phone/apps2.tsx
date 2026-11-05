@@ -1,191 +1,112 @@
 // Apps do celular: Central de Investigação, Loja, Perfil (habilidades, estatísticas, conquistas) e Ajustes.
 
 import { useState } from "react";
-import { Briefcase, Check, Coffee, CreditCard, Download, FileText, Flower2, Lock, LogOut, Package, Palette, Save, Shirt, Trash2, Upload, X } from "lucide-react";
+import { Briefcase, Check, Coffee, CreditCard, Download, FileText, Flower2, KeyRound, Lock, LogOut, Moon, Package, Palette, Save, Shirt, Trash2, Upload } from "lucide-react";
 import Portrait from "../components/Portrait";
-import { BRANCHES, ITEMS, MISSIONS, PERKS, item, mission } from "../content";
-import { CASES, CHAPTERS, ENDINGS, SECURITY_TIPS } from "../content/story";
+import { BRANCHES, ITEMS, MISSIONS, PERKS, item } from "../content";
+import { CHAPTERS, ENDINGS } from "../content/story";
 import { ACHIEVEMENTS } from "../core/achievements";
-import { buy, caseAvailable, equip, itemLocked, levelOf, missionDone, perkAvailable, perkPoints, repTier, shopPrice, solveCase, takePerk, useConsumable, visibleMessages } from "../core/game";
+import { buy, cashOut, equip, heatFactor, itemLocked, levelOf, lootOptions, missionDone, perkAvailable, perkPoints, shopPrice, takePerk, useConsumable, visibleMessages } from "../core/game";
 import { EVENTS } from "../content/story";
-import { TACTIC_LABEL, type Tactic } from "../core/types";
+import { LOOT_LABEL, TACTIC_LABEL, type Tactic } from "../core/types";
 import { exportSave, importSave, removeSlot } from "../store";
 import { ACH_ICONS, Bar, fmt, sfx, useGame } from "../ui";
 import { playerLook } from "../screens/Home";
 import { PhoneHeader } from "./Phone";
 
-// ---------- Investigação ----------
+// ---------- Central (butim e radar da polícia) ----------
+
+export function heatLabel(h: number) {
+  return h >= 85 ? "A polícia está na porta" : h >= 65 ? "Investigação aberta" : h >= 40 ? "Nome circulando" : h >= 15 ? "Alguns boatos" : "Ninguém sabe de você";
+}
 
 export function Investigation({ back }: { back: () => void }) {
   const { s, act, toast, prefs } = useGame();
-  const [tab, setTab] = useState<"casos" | "alertas" | "cartoes">("casos");
-  const [open, setOpen] = useState<string | null>(null);
-  const [marked, setMarked] = useState<string[]>([]);
-  const [ans, setAns] = useState<number | null>(null);
-  const [checked, setChecked] = useState<null | { score: number; passed: boolean }>(null);
-
-  if (open) {
-    const c = CASES.find((x) => x.id === open)!;
-    const done = s.cases[c.id]?.done;
-    const reveal = !!checked || done;
-    return (
-      <div>
-        <PhoneHeader
-          title={c.title}
-          back={() => {
-            setOpen(null);
-            setChecked(null);
-          }}
-        />
-        <p className="small muted">{c.summary}</p>
-        <p className="tiny gold" style={{ margin: "8px 0" }}>
-          {c.instructions}
-        </p>
-        <div className="col">
-          {c.items.map((it) => {
-            const on = marked.includes(it.id);
-            const right = on === it.suspicious;
-            return (
-              <button
-                key={it.id}
-                className={`case-item ${on ? "marked" : ""} ${reveal ? (right ? "right" : "wrong") : ""}`}
-                disabled={reveal}
-                onClick={() => setMarked((m) => (on ? m.filter((x) => x !== it.id) : [...m, it.id]))}
-                aria-pressed={on}
-              >
-                <span className="checkbox">{on && <X size={13} />}</span>
-                <span className="grow">
-                  <b className="small">{it.title}</b>
-                  <span className="tiny muted" style={{ display: "block" }}>
-                    {it.detail}
-                  </span>
-                  {reveal && (
-                    <span className={`tiny ${right ? "green" : "red"}`} style={{ display: "block", marginTop: 4 }}>
-                      {it.suspicious ? "Suspeito. " : "Normal. "}
-                      {it.why}
-                    </span>
-                  )}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <b className="small" style={{ display: "block", margin: "14px 0 8px" }}>
-          {c.question.q}
-        </b>
-        <div className="col">
-          {c.question.options.map((o, i) => (
-            <button key={i} className={`radio-opt ${ans === i ? "on" : ""}`} disabled={reveal} onClick={() => setAns(i)}>
-              <span className="checkbox">{ans === i && <Check size={13} />}</span>
-              <span className="small">{o}</span>
-            </button>
-          ))}
-        </div>
-        {reveal && <p className="small muted" style={{ marginTop: 10 }}>{c.question.explain}</p>}
-        {checked && !checked.passed && (
-          <>
-            <p className="small red" style={{ marginTop: 8 }}>
-              Ainda não fecha: {Math.round(checked.score * 100)}% das marcações corretas{ans !== c.question.answer ? " e a conclusão não é essa" : ""}. Revise e tente de novo.
-            </p>
-            <button
-              className="btn block"
-              style={{ marginTop: 8 }}
-              onClick={() => {
-                setChecked(null);
-              }}
-            >
-              Revisar
-            </button>
-          </>
-        )}
-        {checked?.passed && <p className="small green" style={{ marginTop: 8 }}>Caso resolvido! +{c.reward.xp} XP, +{c.reward.rep} de reputação.</p>}
-        {!reveal && (
-          <button
-            className="btn primary block"
-            style={{ marginTop: 14 }}
-            disabled={ans === null}
-            onClick={() => {
-              let res = { score: 0, passed: false };
-              act((g) => {
-                const r = solveCase(g, c.id, marked, ans ?? -1);
-                res = { score: r.score, passed: r.passed };
-                return r.state;
-              });
-              setChecked(res);
-              sfx(res.passed ? "level" : "bad", prefs.sound);
-              if (res.passed) toast({ text: `Caso resolvido: ${c.title}`, tone: "gold" });
-            }}
-          >
-            Concluir análise
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  const alerts = visibleMessages(s).filter((m) => m.kind === "alert");
-  const zenite = [
-    { f: "padrao-zenite", t: "Padrão da pirâmide identificado" },
-    { f: "cartas-analisadas", t: "Cartas falsas desmontadas" },
-    { f: "mensagens-analisadas", t: "Mensagens falsas catalogadas" },
-    { f: "rede-mapeada", t: "Empresas de fachada mapeadas" },
-    { f: "contrato-analisado", t: "Contrato da Câmara revisado" },
-    { f: "plano-aprovado", t: "Plano Áurea aprovado" },
+  const [tab, setTab] = useState<"butim" | "radar" | "esquema">("butim");
+  const alerts = visibleMessages(s).filter((m) => m.from === "policia" || m.kind === "alert");
+  const esquema = [
+    { f: "esquema-zenite", t: "Entrou no esquema do Zênite (Valdir)" },
+    { f: "sentinela-cego", t: "Sentinela cego: −10% de calor" },
+    { f: "clara-despistada", t: "Jornalista despistada: −10% de calor" },
+    { f: "heranca-albernaz", t: "Herança Albernaz no bolso" },
+    { f: "diego-derrubado", t: "Diego fora do caminho" },
+    { f: "contrato-validado", t: "Papelada da fachada validada" },
+    { f: "pagamento-liberado", t: "Primeira assinatura do Fundo (Celina)" },
+    { f: "otavio-assinou", t: "Segunda assinatura do Fundo (Otávio)" },
   ];
   return (
     <div>
-      <PhoneHeader title="Central de Investigação" back={back} />
+      <PhoneHeader title="Central" back={back} />
+      <div className="card tight" style={{ marginBottom: 10 }}>
+        <div className="row between small">
+          <b>Calor policial</b>
+          <span className={s.heat >= 65 ? "red" : s.heat >= 40 ? "gold" : "green"}>{s.heat}/100</span>
+        </div>
+        <Bar value={s.heat} tone={s.heat >= 65 ? "red" : s.heat >= 40 ? undefined : "green"} label="Calor policial" />
+        <div className="tiny muted" style={{ marginTop: 4 }}>
+          {heatLabel(s.heat)} · baixa 12 por noite · prisões: {s.arrests}/3 · cada golpe gera {Math.round(heatFactor(s) * 100)}% do calor normal
+        </div>
+      </div>
       <div className="tabs">
-        <button className={`tab ${tab === "casos" ? "on" : ""}`} onClick={() => setTab("casos")}>
-          Casos
+        <button className={`tab ${tab === "butim" ? "on" : ""}`} onClick={() => setTab("butim")}>
+          Butim ({s.loot.length})
         </button>
-        <button className={`tab ${tab === "alertas" ? "on" : ""}`} onClick={() => setTab("alertas")}>
-          Alertas
+        <button className={`tab ${tab === "radar" ? "on" : ""}`} onClick={() => setTab("radar")}>
+          Radar
         </button>
-        <button className={`tab ${tab === "cartoes" ? "on" : ""}`} onClick={() => setTab("cartoes")}>
-          Cartões
+        <button className={`tab ${tab === "esquema" ? "on" : ""}`} onClick={() => setTab("esquema")}>
+          Esquema
         </button>
       </div>
-      {tab === "casos" && (
-        <>
-          <div className="card tight" style={{ marginBottom: 10 }}>
-            <b className="small">Dossiê Zênite</b>
-            {zenite.map((z) => (
-              <div key={z.f} className="goal-line tiny">
-                <Check size={14} className={s.flags.includes(z.f) ? "green" : "muted"} /> {z.t}
-              </div>
-            ))}
-          </div>
-          <div className="list">
-            {CASES.map((c) => {
-              const ok = caseAvailable(s, c.id);
-              const rec = s.cases[c.id];
-              return (
-                <button
-                  key={c.id}
-                  className={`list-item ${ok ? "" : "locked"}`}
-                  disabled={!ok}
-                  onClick={() => {
-                    setOpen(c.id);
-                    setMarked([]);
-                    setAns(null);
-                    setChecked(null);
-                  }}
-                >
-                  <FileText size={20} className={rec?.done ? "green" : "gold"} />
-                  <div className="grow">
-                    <b className="small">{c.title}</b>
-                    <div className="tiny muted">{ok ? (rec?.done ? "Resolvido" : rec ? `Tentativa anterior: ${Math.round(rec.score * 100)}%` : "Novo caso") : `Depois de: ${c.requires.map((m) => mission(m).title).join(", ")}`}</div>
+      {tab === "butim" && (
+        <div className="col">
+          <p className="tiny muted">O que as vítimas entregaram. Tudo fictício: cartões aparecem mascarados e nenhum dado real existe no jogo. Venda ao receptador ou use com a ferramenta certa (rende mais, mas esquenta).</p>
+          {s.loot.map((l) => {
+            const o = lootOptions(s, l);
+            return (
+              <div key={l.id} className="shop-item" style={{ alignItems: "flex-start" }}>
+                <div className="shop-ico">{l.kind === "cartao" ? <CreditCard size={20} /> : l.kind === "documento" ? <FileText size={20} /> : <KeyRound size={20} />}</div>
+                <div className="grow">
+                  <b className="small">{LOOT_LABEL[l.kind]}</b>
+                  {l.last4 && <span className="fake-card-number tiny"> •••• {l.last4}</span>}
+                  <div className="tiny muted">
+                    {l.label} · dia {l.day}
                   </div>
-                  {!ok && <Lock size={15} className="muted" />}
-                  {rec?.done && <Check size={16} className="green" />}
-                </button>
-              );
-            })}
-          </div>
-        </>
+                  <div className="tiny gold">Valor de referência: {fmt(l.value)}</div>
+                  <div className="row wrap" style={{ marginTop: 6, gap: 6 }}>
+                    <button
+                      className="btn sm"
+                      onClick={() => {
+                        act((g) => cashOut(g, l.id, "vender"));
+                        sfx("coin", prefs.sound);
+                        toast({ text: `Receptador pagou ${fmt(o.sell)}`, tone: "gold" });
+                      }}
+                    >
+                      Vender · {fmt(o.sell)}
+                    </button>
+                    {o.use && (
+                      <button
+                        className="btn sm primary"
+                        disabled={!o.use.ok}
+                        onClick={() => {
+                          act((g) => cashOut(g, l.id, "usar"));
+                          sfx("coin", prefs.sound);
+                          toast({ text: `+${fmt(o.use!.value)} · o calor subiu`, tone: "gold" });
+                        }}
+                      >
+                        {l.kind === "cartao" ? "Clonar e usar" : "Usar acesso"} · {fmt(o.use.value)}
+                      </button>
+                    )}
+                  </div>
+                  {o.use && !o.use.ok && <div className="tiny muted" style={{ marginTop: 4 }}>Para usar: {item(o.use.need!)?.name} (Mercado)</div>}
+                </div>
+              </div>
+            );
+          })}
+          {!s.loot.length && <div className="empty">Nada no butim. Golpes que arrancam dados, cartões e senhas aparecem aqui.</div>}
+        </div>
       )}
-      {tab === "alertas" && (
+      {tab === "radar" && (
         <div className="col">
           {alerts.map((m) => (
             <div key={m.id} className="card tight small">
@@ -193,36 +114,25 @@ export function Investigation({ back }: { back: () => void }) {
               <p>{m.text}</p>
             </div>
           ))}
+          {!alerts.length && <div className="empty">Rádio da polícia em silêncio. Por enquanto.</div>}
           <div className="card tight">
-            <b className="small">Guia de segurança</b>
+            <b className="small">Como esfriar</b>
             <ul className="tiny muted" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-              {SECURITY_TIPS.map((t) => (
-                <li key={t} style={{ marginBottom: 4 }}>
-                  {t}
-                </li>
-              ))}
+              <li>Cada noite o calor cai 12 pontos.</li>
+              <li>«Sumir por um dia» (Mercado) tira 30 de uma vez.</li>
+              <li>Chip pré-pago, notebook blindado e rede de laranjas cortam o calor de cada golpe.</li>
+              <li>Contradições percebidas e vítimas que vão embora desconfiadas esquentam muito.</li>
+              <li>Em 100, a polícia te pega: fiança, butim apreendido e, sem advogado, uma ferramenta perdida. Na terceira vez, é o fim.</li>
             </ul>
           </div>
         </div>
       )}
-      {tab === "cartoes" && (
-        <div className="col">
-          <p className="tiny muted">Cartões e contas citados nas investigações. Todos são fictícios e mascarados: o jogo nunca pede, guarda ou usa dados reais.</p>
-          {[
-            { n: "•••• 0000", who: "Zênite Serviços Ltda.", f: "padrao-zenite" },
-            { n: "•••• 0000", who: "«Agente pessoal» das cartas", f: "cartas-analisadas" },
-            { n: "•••• 0000", who: "Central falsa das mensagens", f: "mensagens-analisadas" },
-            { n: "•••• 0000", who: "Áurea Consultoria Estratégica", f: "rede-mapeada" },
-          ].map((c, i) => (
-            <div key={i} className="shop-item">
-              <div className="shop-ico">
-                <CreditCard size={20} />
-              </div>
-              <div className="grow">
-                <b className="small fake-card-number">{c.n}</b>
-                <div className="tiny muted">{c.who}</div>
-              </div>
-              <span className={`chip ${s.flags.includes(c.f) ? "red" : ""}`}>{s.flags.includes(c.f) ? "Denunciado" : "Sob análise"}</span>
+      {tab === "esquema" && (
+        <div className="card tight">
+          <b className="small">O caminho até o Fundo Áurea</b>
+          {esquema.map((z) => (
+            <div key={z.f} className="goal-line tiny">
+              <Check size={14} className={s.flags.includes(z.f) ? "green" : "muted"} /> {z.t}
             </div>
           ))}
         </div>
@@ -234,7 +144,7 @@ export function Investigation({ back }: { back: () => void }) {
 // ---------- Loja ----------
 
 const KIND_TABS = [
-  { k: "outfit", label: "Roupas", icon: Shirt },
+  { k: "outfit", label: "Disfarces", icon: Shirt },
   { k: "tool", label: "Ferramentas", icon: Briefcase },
   { k: "consumable", label: "Consumíveis", icon: Coffee },
   { k: "theme", label: "Temas", icon: Palette },
@@ -261,7 +171,7 @@ export function Shop({ back }: { back: () => void }) {
   const list = ITEMS.filter((i) => (tab === "tool" ? i.kind === "tool" || i.kind === "pass" : i.kind === tab) && i.price > 0);
   return (
     <div>
-      <PhoneHeader title="Loja" back={back} />
+      <PhoneHeader title="Mercado clandestino" back={back} />
       <div className="row between small" style={{ marginBottom: 8 }}>
         <span className="muted">Saldo</span>
         <b className="gold">{fmt(s.money)}</b>
@@ -284,7 +194,7 @@ export function Shop({ back }: { back: () => void }) {
             const Icon = KIND_TABS.find((k) => k.k === it.kind)?.icon ?? Briefcase;
             return (
               <div key={it.id} className="shop-item">
-                {it.theme ? <span className="swatch" style={{ background: `linear-gradient(135deg, ${it.theme.accent}, ${it.theme.bg})` }} /> : <div className="shop-ico">{it.id === "flores" ? <Flower2 size={20} /> : it.id === "dossie" ? <FileText size={20} /> : <Icon size={20} />}</div>}
+                {it.theme ? <span className="swatch" style={{ background: `linear-gradient(135deg, ${it.theme.accent}, ${it.theme.bg})` }} /> : <div className="shop-ico">{it.id === "flores" ? <Flower2 size={20} /> : it.id === "dossie" ? <FileText size={20} /> : it.id === "sumico" ? <Moon size={20} /> : <Icon size={20} />}</div>}
                 <div className="grow">
                   <b className="small">{it.name}</b>
                   <div className="tiny muted">{it.description}</div>
@@ -330,7 +240,7 @@ export function Shop({ back }: { back: () => void }) {
           <b className="small">Consumíveis</b>
           {ITEMS.filter((i) => i.kind === "consumable").map((it) => (
             <div key={it.id} className="shop-item">
-              <div className="shop-ico">{it.id === "flores" ? <Flower2 size={20} /> : it.id === "dossie" ? <FileText size={20} /> : <Coffee size={20} />}</div>
+              <div className="shop-ico">{it.id === "flores" ? <Flower2 size={20} /> : it.id === "dossie" ? <FileText size={20} /> : it.id === "sumico" ? <Moon size={20} /> : <Coffee size={20} />}</div>
               <div className="grow">
                 <b className="small">
                   {it.name} ×{s.consumables[it.id] ?? 0}
@@ -341,10 +251,10 @@ export function Shop({ back }: { back: () => void }) {
               </div>
               <button
                 className="btn sm"
-                disabled={!(s.consumables[it.id] > 0) || (it.id === "dossie" && s.dossie) || (it.id === "flores" && s.flowers) || (it.id === "cafe" && s.energy >= 100)}
+                disabled={!(s.consumables[it.id] > 0) || (it.id === "dossie" && s.dossie) || (it.id === "flores" && s.flowers) || (it.id === "cafe" && s.energy >= 100) || (it.id === "sumico" && s.heat === 0)}
                 onClick={() => {
                   act((g) => useConsumable(g, it.id));
-                  toast({ text: it.id === "cafe" ? "+30 de energia" : it.id === "dossie" ? "Dossiê pronto para a próxima conversa" : "Flores para a próxima conversa", tone: "green" });
+                  toast({ text: it.id === "cafe" ? "+30 de energia" : it.id === "dossie" ? "Dossiê pronto para a próxima conversa" : it.id === "sumico" ? "−30 de calor" : "Flores para a próxima conversa", tone: "green" });
                 }}
               >
                 Usar
@@ -371,7 +281,6 @@ export function Shop({ back }: { back: () => void }) {
 
 // ---------- Perfil ----------
 
-const INTEGRITY = (v: number) => (v >= 15 ? "Íntegro" : v >= 5 ? "Confiável" : v > -5 ? "Pragmático" : v > -15 ? "Escorregadio" : "Manipulador");
 
 export function Profile({ back }: { back: () => void }) {
   const { s, act, toast, prefs } = useGame();
@@ -391,11 +300,11 @@ export function Profile({ back }: { back: () => void }) {
         <div className="grow">
           <b>{s.player.name}</b>
           <div className="tiny muted">
-            Nível {lv.level} · {repTier(s.rep).name}
+            Nível {lv.level}
           </div>
           <Bar value={lv.into} max={lv.need} label="XP" />
           <div className="tiny muted" style={{ marginTop: 3 }}>
-            Reputação {s.rep} · Integridade: <span className={s.integrity >= 0 ? "green" : "red"}>{INTEGRITY(s.integrity)}</span>
+            Fama no submundo {s.rep} · Calor <span className={s.heat >= 65 ? "red" : "green"}>{s.heat}</span> · Prisões {s.arrests}/3
           </div>
         </div>
       </div>
@@ -461,14 +370,14 @@ export function Profile({ back }: { back: () => void }) {
             {[
               ["Dias", s.day],
               ["Conversas", s.stats.conversations],
-              ["Acordos", s.stats.deals],
-              ["Sucessos totais", s.stats.great],
-              ["Missões", `${doneMissions}/${MISSIONS.length}`],
-              ["Necessidades", s.stats.needsFound],
+              ["Golpes", s.stats.deals],
+              ["Perfeitos", s.stats.great],
+              ["Alvos", `${doneMissions}/${MISSIONS.length}`],
+              ["Pontos fracos", s.stats.needsFound],
               ["Pessoas", s.met.length],
-              ["Foram embora", s.stats.walkouts],
+              ["Desconfiaram", s.stats.walkouts],
               ["Blefes", s.stats.liesTold],
-              ["Pego mentindo", s.stats.liesCaught],
+              ["Contradições", s.stats.liesCaught],
               ["Km rodados", s.stats.kmTravelled],
               ["Habilidades", s.perks.length],
             ].map(([k, v]) => (
@@ -492,9 +401,9 @@ export function Profile({ back }: { back: () => void }) {
             {!tactics.length && <p className="tiny muted">Ainda nenhuma conversa.</p>}
           </div>
           <div className="card tight">
-            <b className="small">Integridade</b>
+            <b className="small">Ficha policial</b>
             <p className="tiny muted" style={{ marginTop: 4 }}>
-              Franqueza e escuta aumentam; blefes, bajulação e pressão diminuem. Ela decide o final da história. Hoje você é visto como <b className={s.integrity >= 0 ? "green" : "red"}>{INTEGRITY(s.integrity)}</b> ({s.integrity}).
+              Calor atual {s.heat}/100 · prisões {s.arrests}/3 · {s.stats.liesCaught} contradições percebidas por vítimas.
             </p>
           </div>
         </div>
@@ -655,7 +564,7 @@ export function SettingsApp({ back }: { back: () => void }) {
         </button>
       </div>
       <p className="tiny muted center" style={{ marginTop: 14 }}>
-        The Art of Persuasion · economia 100% fictícia
+        The Art of Persuasion · golpes, contas e cartões 100% fictícios
       </p>
     </div>
   );

@@ -58,9 +58,9 @@ it("pressão e blefe não são uma estratégia vencedora", () => {
   expect(wins / total).toBeLessThan(0.15);
 });
 
-it("escolher sempre a mesma opção não vence", () => {
+it("falar qualquer coisa, sem estratégia, não vence", () => {
   let wins = 0, total = 0;
-  for (const m of MISSIONS) { const o = run(m, strategies.primeira, 20); wins += win(o); total += 20; }
+  for (const m of MISSIONS) { const o = run(m, strategies.aleatorio, 20); wins += win(o); total += 20; }
   expect(wins / total).toBeLessThan(0.5);
 });
 

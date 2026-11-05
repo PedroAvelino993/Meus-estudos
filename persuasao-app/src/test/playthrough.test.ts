@@ -2,13 +2,14 @@
 // viaja, conversa, usa necessidades descobertas, aprende habilidades, resolve casos e dorme.
 import { expect, it } from "vitest";
 import { MISSIONS, PERKS, character } from "../content";
-import { CASES } from "../content/story";
 import { optionsFor } from "../core/encounter";
 import {
   anyMission,
   answer,
   buy,
-  caseAvailable,
+  cashOut,
+  lootOptions,
+  useConsumable,
   districtUnlocked,
   endDay,
   finishEncounter,
@@ -18,7 +19,6 @@ import {
   perkAvailable,
   playerCtx,
   say,
-  solveCase,
   startMission,
   takeCounter,
   takePerk,
@@ -63,15 +63,23 @@ it("é possível jogar do começo ao fim da história", () => {
   let s: GameState = newGame("Alex", 0, 12345);
   const PERK_ORDER = ["olho-clinico", "argumentacao", "empatia", "calma", "leitura-fria", "oratoria", "bom-papo", "memoria", "fechador", "presenca", "intuicao", "negociador"];
   let days = 0;
-  while (!s.ending && days < 90) {
+  while (!s.ending && days < 100) {
     days++;
-    // Habilidades e itens úteis
+    // Habilidades e ferramentas: primeiro o que o capítulo e os bairros pedem
     for (const p of PERK_ORDER) if (perkAvailable(s, p)) s = takePerk(s, p);
-    for (const it of ["caderno", "cartao", "passe", "camisa", "terno"]) if (!s.items.includes(it) && s.money > 400) s = buy(s, it);
-    for (const c of CASES) if (caseAvailable(s, c.id) && !s.cases[c.id]?.done) s = solveCase(s, c.id, c.items.filter((i) => i.suspicious).map((i) => i.id), c.question.answer).state;
+    for (const l of [...s.loot]) {
+      const o = lootOptions(s, l);
+      s = o.use?.ok && s.heat < 60 ? cashOut(s, l.id, "usar") : cashOut(s, l.id, "vender");
+    }
+    for (const it of ["chip", "caderno", "leitor", "cracha", "kit-clone", "notebook", "identidade", "convite", "laranjas", "advogado", "site", "cartao", "camisa", "terno"]) if (!s.items.includes(it) && s.money > (it === "laranjas" ? 4300 : 600)) s = buy(s, it);
+    if (s.heat > 60 && s.money > 300) s = useConsumable(buy(s, "sumico"), "sumico");
+    if (s.heat > 70) {
+      s = endDay(s);
+      continue;
+    }
     // Missões da história e do capítulo, por bairro
     let guard = 0;
-    while (s.energy >= 15 && s.minute < 20 * 60 && guard++ < 12) {
+    while (s.energy >= 15 && s.minute < 20 * 60 && s.heat < 75 && guard++ < 12) {
       const next = MISSIONS.filter((m) => missionAvailable(s, m) && districtUnlocked(s, m.district)).sort((a, b) => Number(!!b.story) - Number(!!a.story) || (a.chapter ?? 0) - (b.chapter ?? 0))[0];
       if (next) {
         if (s.location !== next.district) s = travel(s, next.district);
@@ -90,9 +98,10 @@ it("é possível jogar do começo ao fim da história", () => {
     }
     s = endDay(s);
   }
-  console.log(`Final «${s.ending?.id}» no dia ${s.day}: capítulo ${s.chapter}, ${s.stats.deals} acordos, ₢ ${s.money}, rep ${s.rep}, xp ${s.xp}, perks ${s.perks.length}`);
+  console.log(`Final «${s.ending?.id}» no dia ${s.day}: capítulo ${s.chapter}, ${s.stats.deals} golpes, ₢ ${s.money}, calor ${s.heat}, prisões ${s.arrests}, xp ${s.xp}, ferramentas ${s.items.join(",")}`);
   expect(s.ending).not.toBeNull();
   expect(s.chapter).toBe(5);
-  expect(s.day).toBeLessThan(80);
+  expect(s.day).toBeLessThan(85);
+  expect(s.ending?.id).not.toBe("preso");
   void PERKS;
 });

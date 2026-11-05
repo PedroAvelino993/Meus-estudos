@@ -7,9 +7,9 @@ import Portrait from "../components/Portrait";
 import { character, district } from "../content";
 import { persuasionScore, resultOf, type LogEntry } from "../core/encounter";
 import { understand } from "../core/understand";
-import { anyMission, finishEncounter, leaveEncounter, playerCtx, talk } from "../core/game";
+import { anyMission, finishEncounter, heatFactor, leaveEncounter, playerCtx, talk } from "../core/game";
 import { moodFace, tellsOf } from "../core/persona";
-import { ATTRS, ATTR_LABEL, OUTCOME_LABEL, TACTIC_LABEL, type Attr, type Attrs } from "../core/types";
+import { ATTRS, ATTR_LABEL, LOOT_LABEL, OUTCOME_LABEL, TACTIC_LABEL, type Attr, type Attrs } from "../core/types";
 import { Bar, Money, fmt, sfx, useGame } from "../ui";
 
 const band = (v: number) => (v < 25 ? "baixa" : v < 50 ? "média" : v < 75 ? "alta" : "muito alta");
@@ -234,7 +234,7 @@ export default function Encounter() {
             {preview && (
               <div className="row wrap composer-note tiny">
                 <span className="muted">Soa como:</span>
-                <span className="chip">{preview.tactic === "close" ? (m.negotiation ? "Falar de valor" : "Fazer a proposta") : preview.tactic === "leave" ? "Encerrar a conversa" : TACTIC_LABEL[preview.tactic]}</span>
+                <span className="chip">{preview.tactic === "close" ? (m.negotiation ? "Falar de valor" : "Dar o bote") : preview.tactic === "leave" ? "Encerrar a conversa" : TACTIC_LABEL[preview.tactic]}</span>
                 {preview.matched?.insight && <span className="chip green">usa o que você sabe</span>}
                 {preview.matched?.contradicts && <span className="chip red">contradiz: {preview.matched.contradicts}</span>}
                 {preview.matched?.cost ? <span className="chip gold">custa {fmt(preview.matched.cost)}</span> : null}
@@ -300,7 +300,7 @@ function CounterInfo() {
   if (!n) {
     return (
       <div className="composer-note small">
-        <b>Contraproposta:</b> {counter.text} <span className="muted tiny">(Aceitar conta como acordo, mas rende menos. Recusar custa um pouco de paciência.)</span>
+        <b>Contraproposta:</b> {counter.text} <span className="muted tiny">(Aceitar conta como golpe pela metade: rende menos. Recusar custa um pouco de paciência.)</span>
       </div>
     );
   }
@@ -331,14 +331,14 @@ function Hints() {
     const n = c.needs.find((x) => x.id === k);
     if (n) tips.push(`Você sabe que ${n.label.charAt(0).toLowerCase()}${n.label.slice(1)} Fale disso.`);
   }
-  if (e.known.length < c.needs.length) tips.push(`Ainda há algo que pesa para ${first} e você não sabe. Pergunte o que a preocupa ou o que mais importa.`);
-  if (e.attrs.patience < 30) tips.push(`${first} está perdendo a paciência: seja direto ou faça logo a proposta.`);
+  if (e.known.length < c.needs.length) tips.push(`${first} tem um ponto fraco que você ainda não conhece. Pergunte o que preocupa ou o que mais importa.`);
+  if (e.attrs.patience < 30) tips.push(`${first} está perdendo a paciência: seja direto ou dê logo o bote.`);
   if (e.attrs.suspicion > 55) tips.push("Há desconfiança no ar: dados concretos ou franqueza funcionam melhor que promessas.");
   if (e.lastReaction === "offended" || e.lastReaction === "impatient") tips.push("A última fala caiu mal. Mudar de assunto ou reconhecer o erro pode salvar o clima.");
   if (c.interests.length && e.turn >= 1) tips.push(`Assunto que aproxima: ${c.interests.map((i) => i.topic).join(", ")}.`);
   const last = e.tactics.slice(-2);
   if (last.length === 2 && last[0] === last[1]) tips.push("Você está repetindo a mesma abordagem: ela rende cada vez menos.");
-  if (e.turn >= 3) tips.push(m.negotiation ? "Quando quiser falar de dinheiro, diga um valor (ex.: «te pago 300»)." : "Quando sentir que é a hora, faça a proposta (ex.: «Então, fechamos?»).");
+  if (e.turn >= 3) tips.push(m.negotiation ? "Quando quiser falar de dinheiro, diga um valor (ex.: «te pago 300»)." : "Quando sentir que a vítima está no ponto, dê o bote (ex.: «Então, fechamos?»).");
   tips.push(`Gosta de: ${c.likes.join(", ")}. Não gosta de: ${c.dislikes.join(", ")}.`);
   return (
     <div className="composer-note hints">
@@ -358,6 +358,10 @@ function ResultBox() {
   const c = character(m.npc);
   const r = resultOf(e, m, c);
   const success = r.outcome === "great" || r.outcome === "good" || r.outcome === "partial";
+  const isVisit = m.id.startsWith("visit:");
+  const f = heatFactor(s);
+  const heatGain = isVisit ? 0 : Math.round(f * ((success ? (m.heat ?? 8) * (r.outcome === "great" ? 0.7 : 1) : r.outcome === "walkout" ? 8 : r.outcome === "fail" ? 4 : 0) + 12 * e.liesCaught));
+  const loot = success && !isVisit ? (r.outcome === "partial" ? (m.loot ?? []).slice(0, 1) : m.loot ?? []) : [];
   useEffect(() => {
     sfx(success ? (r.outcome === "great" ? "level" : "good") : "bad", prefs.sound);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -381,11 +385,8 @@ function ResultBox() {
           <span>XP</span>
         </div>
         <div className="reward">
-          <b className={r.rep >= 0 ? "green" : "red"}>
-            {r.rep >= 0 ? "+" : ""}
-            {r.rep}
-          </b>
-          <span>Reputação</span>
+          <b className={heatGain > 0 ? "red" : "green"}>+{heatGain}</b>
+          <span>Calor</span>
         </div>
         <div className="reward">
           <b className={r.affinity >= 0 ? "green" : "red"}>
@@ -395,8 +396,20 @@ function ResultBox() {
           <span>Afinidade</span>
         </div>
       </div>
+      {loot.length > 0 && (
+        <div className="card tight" style={{ textAlign: "left", marginBottom: 8 }}>
+          <b className="small">Butim (vai para a Central do celular)</b>
+          <ul className="tiny" style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+            {loot.map((l) => (
+              <li key={l.label}>
+                {LOOT_LABEL[l.kind]}: {l.label} <span className="muted">(≈ {fmt(l.value)})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {r.price !== undefined && <p className="small muted">Preço fechado: {fmt(r.price)}</p>}
-      {e.liesCaught > 0 && <p className="small red">Você foi pego {e.liesCaught === 1 ? "numa contradição" : `em ${e.liesCaught} contradições`}. Isso vai correr pelo bairro.</p>}
+      {e.liesCaught > 0 && <p className="small red">A vítima percebeu {e.liesCaught === 1 ? "uma contradição" : `${e.liesCaught} contradições`}. Isso vai correr pelo bairro — e chegar à polícia.</p>}
       {e.liesTold > 0 && e.liesCaught === 0 && <p className="small gold">Ninguém percebeu seus blefes… desta vez.</p>}
       <button className="btn primary block" style={{ marginTop: 10 }} onClick={() => act((g) => finishEncounter(g))}>
         Continuar

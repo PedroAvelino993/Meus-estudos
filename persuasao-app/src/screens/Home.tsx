@@ -2,9 +2,10 @@
 
 import { BatteryMedium, Check, ChevronRight, CircleDollarSign, Clock, Flag, MapPin, Moon, Newspaper, ScrollText, Target, Trophy } from "lucide-react";
 import Portrait from "../components/Portrait";
-import { MISSIONS, character, district } from "../content";
+import { MISSIONS, character, district, item } from "../content";
+import { heatLabel } from "../phone/apps2";
 import { EVENTS } from "../content/story";
-import { DAY_END, RENT, availableHere, challengesToday, chapterGoal, claimChallenge, clock, gigsHere, levelOf, missionAvailable, missionDone, repTier, REP_TIERS, districtUnlocked } from "../core/game";
+import { DAY_END, RENT, availableHere, challengesToday, chapterGoal, claimChallenge, clock, gigsHere, levelOf, missionAvailable, missionDone, districtUnlocked } from "../core/game";
 import type { GameState } from "../core/game";
 import type { Look } from "../core/types";
 import { Bar, Difficulty, Money, PLAYER_LOOKS, fmt, useGame } from "../ui";
@@ -23,8 +24,6 @@ export function playerLook(s: GameState): Look {
 export default function Home({ onEndDay }: { onEndDay: () => void }) {
   const { s, act, go, brief, toast, openPhone } = useGame();
   const lv = levelOf(s.xp);
-  const tier = repTier(s.rep);
-  const next = REP_TIERS.find((t) => t.min > s.rep);
   const ev = EVENTS.find((e) => e.id === s.event);
   const goal = chapterGoal(s);
   const here = district(s.location);
@@ -44,8 +43,7 @@ export default function Home({ onEndDay }: { onEndDay: () => void }) {
           <div className="eyebrow">Capítulo {s.chapter} · Dia {s.day}</div>
           <h1 style={{ fontSize: "1.6rem", marginTop: 2 }}>{s.player.name}</h1>
           <div className="small muted">
-            {tier.name}
-            {next ? ` · faltam ${next.min - s.rep} de reputação para «${next.name}»` : ""}
+            {heatLabel(s.heat)} · prisões {s.arrests}/3
           </div>
           <div className="row" style={{ marginTop: 10 }}>
             <span className="small" style={{ minWidth: 64 }}>
@@ -67,8 +65,8 @@ export default function Home({ onEndDay }: { onEndDay: () => void }) {
           <b className="gold">{fmt(s.money)}</b>
         </div>
         <div className="stat">
-          <span>Reputação</span>
-          <b>{s.rep}</b>
+          <span>Calor policial</span>
+          <b className={s.heat >= 65 ? "red" : s.heat >= 40 ? "gold" : "green"}>{s.heat}/100</b>
         </div>
         <div className="stat">
           <span>Energia</span>
@@ -109,13 +107,23 @@ export default function Home({ onEndDay }: { onEndDay: () => void }) {
             <p className="small muted" style={{ marginBottom: 10 }}>
               {goal.chapter.goalText}
             </p>
-            <div className="goal-line">
-              <Check size={16} className={s.rep >= goal.chapter.goal.rep ? "green" : "muted"} />
-              <span className="grow">Reputação</span>
-              <span className="small muted">
-                {goal.rep}/{goal.chapter.goal.rep}
-              </span>
-            </div>
+            {goal.chapter.goal.money ? (
+              <div className="goal-line">
+                <Check size={16} className={goal.moneyOk ? "green" : "muted"} />
+                <span className="grow">Juntar dinheiro</span>
+                <span className="small muted">
+                  {fmt(goal.money)}/{fmt(goal.chapter.goal.money)}
+                </span>
+              </div>
+            ) : null}
+            {(goal.chapter.goal.items ?? []).map((id) => (
+              <div key={id} className="goal-line">
+                <Check size={16} className={s.items.includes(id) ? "green" : "muted"} />
+                <span className="grow">
+                  Comprar: {item(id)?.name} <span className="muted small">({fmt(item(id)?.price ?? 0)}, Mercado)</span>
+                </span>
+              </div>
+            ))}
             {goal.chapter.goal.story.map((id) => {
               const m = MISSIONS.find((x) => x.id === id)!;
               return (
@@ -130,7 +138,7 @@ export default function Home({ onEndDay }: { onEndDay: () => void }) {
             {goal.anyNeeded > 0 && (
               <div className="goal-line">
                 <Check size={16} className={goal.any >= goal.anyNeeded ? "green" : "muted"} />
-                <span className="grow">Outras missões do capítulo</span>
+                <span className="grow">Outros golpes do capítulo</span>
                 <span className="small muted">
                   {goal.any}/{goal.anyNeeded}
                 </span>
@@ -138,7 +146,7 @@ export default function Home({ onEndDay }: { onEndDay: () => void }) {
             )}
             {s.ending && (
               <p className="small gold" style={{ marginTop: 8 }}>
-                História concluída. Vila Áurea continua: há bicos, visitas e missões para terminar.
+                História concluída. Vila Áurea continua: há golpes rápidos e alvos que ficaram para trás.
               </p>
             )}
           </div>
@@ -177,12 +185,12 @@ export default function Home({ onEndDay }: { onEndDay: () => void }) {
                   </div>
                   <div className="grow">
                     <b>{m.title}</b>
-                    <div className="small muted">Bico do dia · {character(m.npc).name}</div>
+                    <div className="small muted">Golpe rápido · {character(m.npc).name}</div>
                   </div>
                   <span className="chip green">{fmt(m.rewards.money)}</span>
                 </button>
               ))}
-              {!missionsHere.length && !gigs.length && <div className="empty">Nada pendente por aqui hoje. Visite alguém ou vá para outro bairro.</div>}
+              {!missionsHere.length && !gigs.length && <div className="empty">Nenhum alvo disponível aqui hoje. Sonde alguém com uma visita ou mude de bairro.</div>}
             </div>
           </div>
 
@@ -285,7 +293,7 @@ export default function Home({ onEndDay }: { onEndDay: () => void }) {
               <Moon size={18} /> Encerrar o dia
             </div>
             <p className="small muted" style={{ marginBottom: 10 }}>
-              Dormir recupera sua energia. À noite, a Dona Cida cobra o aluguel ({fmt(RENT)}). {s.money < RENT && <span className="red">Seu saldo não cobre o aluguel.</span>}
+              Dormir recupera sua energia e esfria o calor policial em 12 pontos. À noite, a Dona Cida cobra o aluguel ({fmt(RENT)}). {s.money < RENT && <span className="red">Seu saldo não cobre o aluguel.</span>}
             </p>
             <div className="row small muted" style={{ marginBottom: 10 }}>
               <Clock size={15} /> {clock(s.minute)} <BatteryMedium size={15} style={{ marginLeft: 8 }} /> {s.energy}% <span className="grow" /> Saldo <Money n={s.money} />

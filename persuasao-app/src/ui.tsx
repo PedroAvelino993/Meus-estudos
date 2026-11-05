@@ -153,6 +153,9 @@ export const SENDERS: Record<string, { name: string; color: string; initials: st
   sistema: { name: "Vila Áurea", color: "#C9A44C", initials: "VA" },
   noticias: { name: "O Relógio — notícias", color: "#B5655B", initials: "OR" },
   seguranca: { name: "Central de Segurança", color: "#3FA7A0", initials: "CS" },
+  policia: { name: "Radar da polícia", color: "#E0705F", initials: "RP" },
+  lobo: { name: "Lobo (agiota)", color: "#6B7585", initials: "LB" },
+  zenite: { name: "Z.", color: "#8C6D26", initials: "Z" },
 };
 
 // ---------- Efeitos sonoros simples (gerados, sem arquivos) ----------

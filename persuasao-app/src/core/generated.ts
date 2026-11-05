@@ -1,4 +1,4 @@
-// Missões geradas a partir dos personagens: bicos do dia (repetíveis) e visitas sociais.
+// Missões geradas a partir dos personagens: golpes rápidos do dia (repetíveis) e visitas para sondar alvos.
 
 import type { Character, Mission } from "./types";
 import { GIGS } from "../content/story";
@@ -36,13 +36,15 @@ export function makeGig(templateId: string, c: Character, day: number): Mission 
     threshold: 26 + tier * 4,
     beats: base.beats,
     negotiation: t.negotiation?.(tier),
-    rewards: { money: 25 * tier + 15, xp: 20 * tier + 10, rep: 1 },
+    rewards: { money: t.negotiation ? 15 * tier : 25 * tier + 15, xp: 20 * tier + 10, rep: 1 },
+    loot: (t.loot ?? []).map((l) => ({ ...l, label: fillName(l.label, c), value: l.value * tier })),
+    heat: 5 + tier * 2,
     endings: base.endings,
     minutes: 30,
   };
 }
 
-/** Visita social: sem objetivo comercial; serve para criar laços e descobrir necessidades. */
+/** Visita: sem golpe nenhum. Serve para ganhar confiança e descobrir pontos fracos antes do bote. */
 export function makeVisit(c: Character): Mission {
   const first = c.nick ?? c.name.split(" ")[0];
   return {
@@ -53,9 +55,9 @@ export function makeVisit(c: Character): Mission {
     type: "favor",
     difficulty: 1,
     requires: {},
-    client: "Ninguém — só você",
-    brief: `Passar um tempo com ${first}, sem nenhum pedido. Conhecer melhor a pessoa ajuda nas próximas conversas.`,
-    objective: `Criar afinidade com ${first} e, quem sabe, descobrir o que importa para ${c.age > 50 ? "essa pessoa" : "ela"}.`,
+    client: "Sondagem",
+    brief: `Passar um tempo com ${first}, sem pedir nada. Quem confia em você hoje cai mais fácil amanhã.`,
+    objective: `Ganhar a confiança de ${first} e descobrir os pontos fracos dessa pessoa.`,
     threshold: 30,
     beats: [
       {
@@ -63,7 +65,7 @@ export function makeVisit(c: Character): Mission {
         canClose: true,
         npc: ["Ué, sem negócio hoje? Só visita? Hum. Senta.", "Visita? Que coisa rara. Pode ficar um pouco."],
         options: [
-          { id: "sobre-voce", text: "Contar um pouco sobre você e por que veio para Vila Áurea", tactic: "honesty", reply: { good: "Hum. Então você também começou do zero. Respeito isso.", bad: "Hum. Tá." } },
+          { id: "sobre-voce", text: "Contar uma história comovente sobre por que você veio para Vila Áurea", tactic: "honesty", reply: { good: "Hum. Então você também começou do zero. Respeito isso.", bad: "Hum. Tá." } },
           { id: "dia", text: `Perguntar como ${first} está de verdade`, tactic: "empathy", reply: { good: "…Ninguém pergunta isso de verdade. Obrigado.", bad: "Estou bem. Por quê?" } },
           { id: "piada", text: "Contar uma história engraçada do seu dia", tactic: "humor" },
           { id: "conselho", text: `Pedir um conselho a ${first} sobre a cidade`, tactic: "question", reply: { good: "Conselho? Bom… desconfie de quem promete demais e escute quem fala pouco.", bad: "Conselho? Não sou guru de ninguém." } },

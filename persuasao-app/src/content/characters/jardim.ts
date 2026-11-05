@@ -65,7 +65,7 @@ export const JARDIM: Character[] = [
         id: "quem-paga",
         question: "Deixa eu perguntar logo: quem paga você para estar aqui?",
         options: [
-          { text: "Ser transparente sobre quem contratou você e quanto você ganha", effect: { trust: 10, suspicion: -10 }, reply: "Pelo menos você é sincero. Isso conta.", kind: "honest" },
+          { text: "Contar a sua história de cobertura com calma, citando o nome do programa", effect: { trust: 10, suspicion: -10 }, reply: "Pelo menos você é sincero. Isso conta.", kind: "honest" },
           { text: "Dizer que é trabalho voluntário", effect: { trust: 6, credibility: 4 }, reply: "Voluntário? Hum.", kind: "bluff", claim: { key: "pagamento", value: "voluntario", label: "você trabalha de graça" } },
           { text: "Desconversar", effect: { suspicion: 10, patience: -6 }, reply: "Não respondeu. Anotado.", kind: "evasive" },
         ],
@@ -138,7 +138,7 @@ export const JARDIM: Character[] = [
         id: "documento",
         question: "Você tem algum documento, alguma coisa que mostre quem você é?",
         options: [
-          { text: "Mostrar o documento e o contato de quem contratou você", effect: { trust: 12, suspicion: -12 }, reply: "Bom. Gente honesta não tem medo de mostrar.", kind: "honest" },
+          { text: "Mostrar o crachá e um cartão com um telefone que alguém atende", effect: { trust: 12, suspicion: -12 }, reply: "Bom. Gente honesta não tem medo de mostrar.", kind: "honest" },
           { text: "Dizer que esqueceu em casa", effect: { suspicion: 12 }, reply: "Esqueceu. Sei.", kind: "evasive" },
         ],
       },

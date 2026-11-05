@@ -205,7 +205,7 @@ export const MERCADO: Character[] = [
         id: "policia",
         question: "Me fala uma coisa: você é polícia?",
         options: [
-          { text: "Dizer a verdade: não, você é um mediador contratado", effect: { trust: 8, suspicion: -6 }, reply: "Mediador. Sei. Tá, tá, acredito.", kind: "honest" },
+          { text: "Rir e dizer que polícia não anda com essa roupa", effect: { trust: 8, suspicion: -6 }, reply: "Mediador. Sei. Tá, tá, acredito.", kind: "honest" },
           { text: "Insinuar que tem contatos na polícia", effect: { suspicion: 15, interest: 6 }, reply: "Ah, é? Então nossa conversa acaba aqui.", kind: "bluff", claim: { key: "policia", value: "contatos", label: "você tem contatos na polícia" } },
         ],
       },

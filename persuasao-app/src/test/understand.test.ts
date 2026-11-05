@@ -18,6 +18,8 @@ describe("reconhecer a intenção da fala", () => {
     ["haha imagina o Davi montando um robô", "humor"],
     ["Posso abrir mão da taxa para você", "concession"],
     ["Então, fechamos?", "close"],
+    ["Me passa o cartão para eu confirmar a inscrição", "close"],
+    ["Só falta a sua assinatura aqui", "close"],
     ["Tchau, a gente conversa outra hora", "leave"],
     ["Mudando de assunto, que calor hoje", "changeSubject"],
     ["Bom dia! Tudo bem com a senhora", "rapport"],
@@ -34,7 +36,7 @@ describe("entender a fala dentro da missão", () => {
 
   it("paráfrase de uma fala prevista vale como ela", () => {
     expect(understand("Como é que o Davi passa as tardes dele?", e, m, c, ctx).optionId).toBe("davi-rua");
-    expect(understand("Garanto que não tem mensalidade nem taxa escondida, posso mostrar o termo", e, m, c, ctx).optionId).toBe("sem-custo");
+    expect(understand("É tudo gratuito, só tem uma taxinha simbólica de matrícula", e, m, c, ctx).optionId).toBe("sem-custo");
     expect(understand("Funciona das 13h às 17h, tem reforço escolar, esporte e lanche", e, m, c, ctx).optionId).toBe("explicar-projeto");
   });
 

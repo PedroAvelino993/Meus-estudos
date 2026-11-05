@@ -41,13 +41,13 @@ export default function Title({ onStart, onLoad, lastSlot }: Props) {
       <div className="title-card">
         {mode === "menu" && (
           <>
-            <div className="eyebrow">Um jogo de estratégia social</div>
+            <div className="eyebrow">Um jogo de lábia e golpes</div>
             <h1 className="title-logo" style={{ marginTop: 14 }}>
               <em>The Art of</em>Persuasion
             </h1>
             <div className="title-rule" />
             <p className="muted" style={{ maxWidth: 420, margin: "0 auto" }}>
-              Você chega a {CITY} com uma mala e {fmt(50)}. Para subir na vida, vai precisar entender as pessoas: o que querem, do que têm medo e quando estão prontas para dizer sim.
+              Você chega a {CITY} com uma mala, {fmt(50)} e uma dívida com um agiota. Sua única ferramenta é a lábia: descubra o ponto fraco de cada pessoa, arranque dados, cartões e dinheiro, compre equipamento melhor e suba até os alvos mais poderosos da cidade — sem deixar a polícia chegar até você.
             </p>
             <div className="title-actions">
               {lastSlot && (
@@ -74,7 +74,7 @@ export default function Title({ onStart, onLoad, lastSlot }: Props) {
               </button>
             </div>
             <p className="tiny muted" style={{ marginTop: 22 }}>
-              Toda a economia do jogo é fictícia. Nenhum dado real de cartão, senha ou banco é pedido ou guardado.
+              Ficção: pessoas, empresas, contas e cartões são inventados e aparecem mascarados. O jogo não ensina técnicas reais e não pede nem guarda nenhum dado real.
             </p>
           </>
         )}

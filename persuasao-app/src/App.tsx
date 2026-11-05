@@ -1,7 +1,7 @@
 // Raiz do jogo: tela de título, estado da partida, salvamento automático, navegação e sobreposições.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BatteryMedium, Clock, Crown, House, Map as MapIcon, MapPin, MessageCircle, Moon, Smartphone, Sparkles, Star } from "lucide-react";
+import { BatteryMedium, Clock, Flame, House, Map as MapIcon, MapPin, MessageCircle, Moon, Smartphone, Sparkles, Star } from "lucide-react";
 import Title from "./screens/Title";
 import Home from "./screens/Home";
 import CityMap from "./screens/CityMap";
@@ -11,7 +11,7 @@ import Phone from "./phone/Phone";
 import { checkAchievements } from "./core/achievements";
 import { CHAPTERS, ENDINGS } from "./content/story";
 import { district } from "./content";
-import { type GameState, clock, daySummary, endDay, levelOf, repTier, unread } from "./core/game";
+import { type GameState, clock, daySummary, endDay, levelOf, unread } from "./core/game";
 import { currentSlot, load, loadPrefs, save, savePrefs, type Prefs } from "./store";
 import { ACH_ICONS, Ctx, Modal, fmt, sfx, type GameCtx, type Toast, type View } from "./ui";
 
@@ -77,7 +77,8 @@ export default function App() {
         toast({ text: `Nível ${levelOf(next.xp).level}! Você ganhou um ponto de habilidade.`, tone: "gold", icon: Sparkles });
         setConfetti((c) => c + 1);
       }
-      if (repTier(next.rep).name !== repTier(before.rep).name && next.rep > before.rep) toast({ text: `Reputação: agora você é «${repTier(next.rep).name}»`, tone: "green", icon: Crown });
+      if (next.heat >= 65 && before.heat < 65) toast({ text: "O calor está alto: a polícia está atrás de você.", tone: "red", icon: Flame });
+      if (next.arrests > before.arrests) toast({ text: "A polícia te pegou!", tone: "red", icon: Flame });
       if (before.encounter && !next.encounter && next.money > before.money) sfx("coin", prefs.sound);
       if (unread(next) > unread(before) && !next.encounter) {
         sfx("msg", prefs.sound);
@@ -176,8 +177,8 @@ export default function App() {
                   <i style={{ width: `${(lv.into / lv.need) * 100}%`, background: "var(--gold)" }} />
                 </span>
               </span>
-              <span className="hud-pill hide-sm" title="Reputação">
-                <Crown size={15} className="gold" /> {s.rep}
+              <span className="hud-pill" title="Calor policial">
+                <Flame size={15} className={s.heat >= 65 ? "red" : s.heat >= 40 ? "gold" : "green"} /> {s.heat}
               </span>
               <span className="hud-pill" title="Dia e horário">
                 <Clock size={15} /> D{s.day} {clock(s.minute)}
@@ -255,7 +256,7 @@ export default function App() {
                 </div>
                 <div className="reward">
                   <b>{summary.deals}</b>
-                  <span>Acordos</span>
+                  <span>Golpes</span>
                 </div>
               </div>
               <p className="small muted">
@@ -312,7 +313,7 @@ export default function App() {
                 </div>
                 <div className="reward">
                   <b>{s.stats.deals}</b>
-                  <span>Acordos</span>
+                  <span>Golpes</span>
                 </div>
                 <div className="reward">
                   <b className="gold">{fmt(s.money)}</b>
@@ -323,7 +324,7 @@ export default function App() {
                   <span>Pessoas</span>
                 </div>
               </div>
-              <p className="small muted">Existem quatro finais, decididos pela sua integridade e pelo resultado com o prefeito. A cidade continua aberta: termine as missões que faltaram.</p>
+              <p className="small muted">Existem quatro finais, decididos pelo golpe no prefeito, pelo calor da polícia, pelas prisões e pelo dinheiro acumulado.</p>
               <button className="btn primary block" style={{ marginTop: 16 }} onClick={() => act((g) => ({ ...g, flags: [...g.flags, "final-visto"] }))}>
                 Continuar em Vila Áurea
               </button>

@@ -67,7 +67,7 @@ const has = (t: string, re: RegExp) => re.test(t);
 export function detectTactic(raw: string): Tactic | "close" | "leave" {
   const t = ` ${normalize(raw)} `;
   if (has(t, / (tchau|ate logo|ate mais|adeus|preciso ir|tenho que ir|vou embora|deixa pra la|esquece|encerrar|outra hora a gente)/)) return "leave";
-  if (has(t, / (fechado\?|fechamos|vamos fechar|topa\b|topa\?|aceita\?|aceita a proposta|minha proposta|proponho|o que (me )?diz|negocio fechado\?|combinado\?|podemos fechar|vamos combinar|faco (a|uma) proposta|quanto voce (quer|pede|paga|cobra)|falar de (valor|preco)|qual (o|e o) (seu )?preco)/)) return "close";
+  if (has(t, / (fechado\?|fechamos|vamos fechar|topa\b|topa\?|aceita\?|aceita a proposta|minha proposta|proponho|o que (me )?diz|negocio fechado\?|combinado\?|podemos fechar|vamos combinar|faco (a|uma) proposta|quanto voce (quer|pede|paga|cobra)|falar de (valor|preco)|qual (o|e o) (seu )?preco|pode assinar|assina aqui|so assinar|so falta (a sua )?assinatura|(me )?(passa|passe|informa|informe|confirma|confirme|dita|dite) (o|a|os|as|seu|sua|seus|suas) (numero do )?(cartao|senha|dados|codigo|login|documentos)|qual (e )?(a|o) (sua |seu )?(senha|numero do cartao|login|codigo))/)) return "close";
   if (has(t, / (mudando de assunto|falando nisso|outra coisa|deixa eu (te )?contar|por falar em|aliviar|esquece isso)/)) return "changeSubject";
   if (has(t, / (haha|kkk|rsrs| rs |hehe|piada|brincadeira|to brincando|estou brincando|engracad)/)) return "humor";
   if (has(t, / (vai se arrepender|ultima chance|agora ou nunca|tem que aceitar|e obrigad|senao|se nao aceitar|multa|processo|vou denunciar|nao tem escolha|e pegar ou largar|ou aceita)/)) return "pressure";

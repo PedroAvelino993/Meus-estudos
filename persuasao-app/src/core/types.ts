@@ -53,9 +53,9 @@ export const TACTIC_LABEL: Record<Tactic, string> = {
   pressure: "Pressionar",
   bluff: "Blefe",
   reframe: "Reenquadrar",
-  honesty: "Franqueza",
+  honesty: "Parecer sincero",
   changeSubject: "Mudar de assunto",
-  close: "Fazer a proposta",
+  close: "Dar o bote",
   leave: "Encerrar",
 };
 
@@ -247,7 +247,7 @@ export interface Negotiation {
   clientLimit: number;
 }
 
-export type MissionType = "pitch" | "negotiation" | "mediation" | "investigation" | "favor" | "contract" | "duel";
+export type MissionType = "pitch" | "negotiation" | "mediation" | "investigation" | "favor" | "contract" | "duel" | "phishing" | "clone" | "impersonation" | "heist";
 
 export interface Mission {
   id: string;
@@ -258,7 +258,7 @@ export interface Mission {
   difficulty: 1 | 2 | 3 | 4 | 5;
   chapter?: number;
   story?: boolean;
-  requires: { level?: number; rep?: number; missions?: string[]; chapter?: number; flags?: string[]; item?: string };
+  requires: { level?: number; rep?: number; missions?: string[]; chapter?: number; flags?: string[]; item?: string; items?: string[] };
   /** Quem contratou o jogador. */
   client: string;
   brief: string;
@@ -269,6 +269,10 @@ export interface Mission {
   beats: Beat[];
   negotiation?: Negotiation;
   rewards: { money: number; xp: number; rep: number };
+  /** O que a vítima entrega além do dinheiro (dados, cartão, senha, acesso). Tudo fictício. */
+  loot?: LootSpec[];
+  /** Calor policial que o golpe gera se der certo (0–100). */
+  heat?: number;
   endings: { great: string; good: string; partial: string; fail: string; walkout: string };
   /** Mensagens que o personagem manda depois. */
   followUp?: { great?: string; good?: string; fail?: string };
@@ -277,13 +281,31 @@ export interface Mission {
   minutes: number;
 }
 
+export type LootKind = "cartao" | "dados" | "senha" | "acesso" | "documento";
+
+export const LOOT_LABEL: Record<LootKind, string> = {
+  cartao: "Cartão",
+  dados: "Dados pessoais",
+  senha: "Senha",
+  acesso: "Acesso",
+  documento: "Documento",
+};
+
+export interface LootSpec {
+  kind: LootKind;
+  /** Descrição curta ("cartão de crédito da Helena"). */
+  label: string;
+  /** Valor de referência em ₢ (limite do cartão, preço no mercado clandestino…). */
+  value: number;
+}
+
 export type Outcome = "great" | "good" | "partial" | "fail" | "walkout" | "left";
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
-  great: "Sucesso total",
-  good: "Acordo fechado",
-  partial: "Meio-termo",
-  fail: "Recusado",
-  walkout: "Foi embora",
-  left: "Você encerrou",
+  great: "Golpe perfeito",
+  good: "Caiu no golpe",
+  partial: "Golpe pela metade",
+  fail: "Não caiu",
+  walkout: "Desconfiou e foi embora",
+  left: "Você recuou",
 };

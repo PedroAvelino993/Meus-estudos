@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Bus, Lock, MapPin, Users } from "lucide-react";
 import Portrait from "../components/Portrait";
-import { CHARACTERS, CITY, DISTRICTS, MISSIONS, district } from "../content";
+import { CHARACTERS, CITY, DISTRICTS, MISSIONS, district, item } from "../content";
 import { DAY_END, districtUnlocked, fareTo, gigsHere, levelOf, missionAvailable, travel } from "../core/game";
 import type { GameState } from "../core/game";
 import { fmt, useGame } from "../ui";
@@ -25,7 +25,8 @@ function lockText(s: GameState, id: string): string[] {
   const out: string[] = [];
   if (u.chapter && s.chapter < u.chapter) out.push(`Capítulo ${u.chapter}`);
   if (u.level && levelOf(s.xp).level < u.level) out.push(`Nível ${u.level}`);
-  if (u.rep && s.rep < u.rep) out.push(`Reputação ${u.rep}`);
+  if (u.rep && s.rep < u.rep) out.push(`Fama ${u.rep}`);
+  for (const i of u.items ?? []) if (!s.items.includes(i)) out.push(`Ter: ${item(i)?.name ?? i} (Mercado)`);
   return out;
 }
 
@@ -96,7 +97,7 @@ export default function CityMap() {
                     {x.name}
                   </text>
                   <text className="map-sub" x={x.label[0]} y={x.label[1] + 18} textAnchor="middle">
-                    {open ? (count ? `${count} ${count === 1 ? "missão" : "missões"}` : x.kind) : "🔒 bloqueado"}
+                    {open ? (count ? `${count} ${count === 1 ? "alvo" : "alvos"}` : x.kind) : "🔒 bloqueado"}
                   </text>
                 </g>
               );
@@ -146,7 +147,7 @@ export default function CityMap() {
                   </button>
                 ))}
               </div>
-              {missions.length > 0 && <p className="small" style={{ marginTop: 10 }}>{missions.length} missões disponíveis aqui.</p>}
+              {missions.length > 0 && <p className="small" style={{ marginTop: 10 }}>{missions.length} alvos disponíveis aqui.</p>}
               <div className="col" style={{ marginTop: 14 }}>
                 {here ? (
                   <button className="btn primary block" onClick={() => go("district")}>
@@ -168,7 +169,7 @@ export default function CityMap() {
                 {!here && s.money < fare && <p className="tiny red">Saldo insuficiente para a passagem.</p>}
                 {!here && tooLate && <p className="tiny red">O transporte não circula tão tarde. Durma e volte amanhã.</p>}
               </div>
-              {sel === s.location && gigsHere(s).length > 0 && <p className="tiny muted" style={{ marginTop: 8 }}>Há bicos do dia por aqui.</p>}
+              {sel === s.location && gigsHere(s).length > 0 && <p className="tiny muted" style={{ marginTop: 8 }}>Há golpes rápidos por aqui.</p>}
             </>
           ) : (
             <div className="card tight" style={{ marginTop: 12, background: "var(--panel-2)" }}>

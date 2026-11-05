@@ -1,20 +1,20 @@
 // Estado da partida e todas as ações do jogador. Funções puras: recebem o estado e devolvem outro.
 // A interface só chama estas funções; o salvamento acontece em src/store.ts.
 
-import type { Mission, Outcome, Tactic } from "./types";
+import type { LootKind, Mission, Outcome, Tactic } from "./types";
 import { type EncounterState, type PlayerCtx, type Relationship, acceptCounter, answerSide, choose, newRelationship, offer, rejectCounter, resultOf, startEncounter } from "./encounter";
 import { hash, rngFrom, pickOne, shuffle } from "./rng";
 import { makeGig, makeVisit } from "./generated";
 import { normalize, priceIn, saysYes, understand, understandSide, type Understood } from "./understand";
 import { CHARACTERS, DISTRICTS, ITEMS, MISSIONS, PERKS, character, district, item, mission as missionById } from "../content";
-import { CASES, CHALLENGES, CHAPTERS, ENDINGS, EVENTS, GIGS, SECURITY_TIPS, emptyDayStats, type DayStats } from "../content/story";
+import { CHALLENGES, CHAPTERS, ENDINGS, EVENTS, GIGS, POLICE_ALERTS, emptyDayStats, type DayStats } from "../content/story";
 
 export const SAVE_VERSION = 1;
 export const DAY_START = 8 * 60;
 export const DAY_END = 22 * 60;
 export const RENT = 35;
 
-export type TxCategory = "acordo" | "bico" | "loja" | "aluguel" | "transporte" | "desafio" | "investigação" | "inicial" | "gasto";
+export type TxCategory = "acordo" | "bico" | "loja" | "aluguel" | "transporte" | "desafio" | "investigação" | "inicial" | "gasto" | "butim" | "policia" | "divida";
 
 export interface Transaction {
   id: number;
@@ -41,6 +41,18 @@ export interface HistoryEntry {
   minute: number;
   text: string;
   kind: "deal" | "fail" | "travel" | "day" | "level" | "chapter" | "shop" | "case" | "info";
+}
+
+/** Algo que uma vítima entregou: dados, cartão, senha… Tudo fictício e sempre mascarado. */
+export interface LootItem {
+  id: number;
+  kind: LootKind;
+  label: string;
+  owner: string;
+  value: number;
+  /** Final fictício do cartão, para exibir mascarado (•••• 4821). */
+  last4?: string;
+  day: number;
 }
 
 export interface MissionRecord {
@@ -98,6 +110,10 @@ export interface GameState {
   gigs: { id: string; template: string; char: string; done: boolean }[];
   visitsToday: string[];
   cases: Record<string, { done: boolean; score: number }>;
+  /** Calor policial (0–100). Em 100, a polícia chega. */
+  heat: number;
+  arrests: number;
+  loot: LootItem[];
   encounter: EncounterState | null;
   stats: Stats;
   achievements: Record<string, number>;
@@ -143,6 +159,9 @@ export function newGame(name: string, avatar: number, seed = Date.now()): GameSt
     gigs: [],
     visitsToday: [],
     cases: {},
+    heat: 0,
+    arrests: 0,
+    loot: [],
     encounter: null,
     stats: { conversations: 0, deals: 0, great: 0, walkouts: 0, liesTold: 0, liesCaught: 0, moneyEarned: 0, moneySpent: 0, needsFound: 0, bestDeal: 0, tactics: {}, days: 1, kmTravelled: 0 },
     achievements: {},
@@ -154,7 +173,8 @@ export function newGame(name: string, avatar: number, seed = Date.now()): GameSt
   };
   s = tx(s, "Economias de quando você chegou", 50, "inicial");
   s = msg(s, "cida", "Seja bem-vindo à Pensão Nunes, meu bem! Seu quarto é o dos fundos. Aluguel de ₢ 35 por dia, cobrado à noite. Qualquer coisa, grita. — Dona Cida", "msg");
-  s = msg(s, "sistema", "Dica: no mapa, toque num bairro para ver quem está lá. Converse, descubra o que cada pessoa precisa e só faça a proposta quando sentir que é a hora.", "system");
+  s = msg(s, "lobo", "Achou que mudar de cidade apagava a dívida? São ₢ 300. Quando você juntar o dinheiro, eu fico sabendo. Não me faça ir buscar. — Lobo", "msg");
+  s = msg(s, "sistema", "Como jogar: converse escrevendo, descubra o ponto fraco de cada pessoa e dê o bote na hora certa. Cada golpe gera calor policial: se chegar a 100, a polícia te pega. Use o mercado clandestino (app Loja) para comprar ferramentas melhores.", "system");
   s = rollDay(s, false);
   return s;
 }
@@ -225,7 +245,7 @@ export function repTier(rep: number) {
 export function districtUnlocked(s: GameState, id: string): boolean {
   const d = district(id);
   const u = d.unlock;
-  return (u.level ?? 0) <= levelOf(s.xp).level && (u.rep ?? 0) <= s.rep && (u.chapter ?? 0) <= s.chapter;
+  return (u.level ?? 0) <= levelOf(s.xp).level && (u.rep ?? 0) <= s.rep && (u.chapter ?? 0) <= s.chapter && (u.items ?? []).every((i) => s.items.includes(i));
 }
 
 export function missionDone(s: GameState, id: string): boolean {
@@ -242,6 +262,7 @@ export function missionAvailable(s: GameState, m: Mission): boolean {
   if (r.missions?.some((x) => !missionDone(s, x))) return false;
   if (r.flags?.some((f) => !s.flags.includes(f))) return false;
   if (r.item && !s.items.includes(r.item)) return false;
+  if (r.items?.some((i) => !s.items.includes(i))) return false;
   // Depois de um fracasso, só no dia seguinte
   const rec = s.missions[m.id];
   if (rec && rec.lastDay === s.day && rec.attempts > 0) return false;
@@ -260,6 +281,8 @@ export function missionLock(s: GameState, m: Mission): MissionReason {
   if (r.chapter && s.chapter < r.chapter) return { ok: false, reason: `Capítulo ${r.chapter}` };
   if (r.level && levelOf(s.xp).level < r.level) return { ok: false, reason: `Nível ${r.level}` };
   if (r.rep && s.rep < r.rep) return { ok: false, reason: `Reputação ${r.rep}` };
+  const tool = [...(r.items ?? []), ...(r.item ? [r.item] : [])].find((i) => !s.items.includes(i));
+  if (tool) return { ok: false, reason: `Precisa de: ${item(tool)?.name ?? tool}` };
   const miss = r.missions?.find((x) => !missionDone(s, x));
   if (miss) return { ok: false, reason: `Antes: ${missionById(miss).title}` };
   const rec = s.missions[m.id];
@@ -450,6 +473,17 @@ export function finishEncounter(s0: GameState): GameState {
     s = msg(s, "sistema", `Nível ${level1}! Use o seu ponto de habilidade no app Perfil.`, "system");
   }
 
+  // Butim e calor policial
+  if (success && !isVisit) {
+    const share = r.outcome === "great" ? 1.3 : r.outcome === "good" ? 1 : 0.5;
+    const specs = r.outcome === "partial" ? (m.loot ?? []).slice(0, 1) : m.loot ?? [];
+    for (const spec of specs) s = addLoot(s, spec.kind, spec.label, c.id, Math.round(spec.value * share));
+    s = addHeat(s, (m.heat ?? 8) * (r.outcome === "great" ? 0.7 : 1), `${m.title}`);
+  } else if (!isVisit && (r.outcome === "walkout" || r.outcome === "fail")) {
+    s = addHeat(s, r.outcome === "walkout" ? 8 : 4, "vítima desconfiada");
+  }
+  if (e.liesCaught > 0) s = addHeat(s, 12 * e.liesCaught, "contradição percebida");
+
   // Relacionamento e memória do personagem
   const rel0 = s.relationships[c.id] ?? newRelationship();
   const rel: Relationship = {
@@ -483,7 +517,7 @@ export function finishEncounter(s0: GameState): GameState {
   const ds = { ...s.dayStats, talks: s.dayStats.talks + 1 };
   if (success && !isVisit) {
     ds.deals++;
-    if (e.liesTold === 0) ds.dealsNoBluff++;
+    if (e.liesCaught === 0) ds.dealsNoBluff++;
   }
   if (money > 0) ds.earned += money;
   if (r.outcome === "walkout") ds.walkouts++;
@@ -496,10 +530,12 @@ export function finishEncounter(s0: GameState): GameState {
   const fu = r.outcome === "great" ? m.followUp?.great ?? m.followUp?.good : r.outcome === "good" || r.outcome === "partial" ? m.followUp?.good : m.followUp?.fail;
   if (fu) s = msg(s, c.id, fu, "msg", s.day + 1);
   if (e.liesCaught > 0 && !isVisit) {
-    s = msg(s, "noticias", `Boato no ${district(c.district).name}: dizem que ${s.player.name} não é de confiança. Reputação abalada.`, "news", s.day + 1);
+    s = msg(s, "noticias", `Boato no ${district(c.district).name}: tem gente dizendo que um golpista anda pelo bairro. ${c.name.split(" ")[0]} contou para os vizinhos.`, "news", s.day + 1);
   }
+  if (r.outcome === "walkout" && !isVisit && s.heat >= 40) s = msg(s, "policia", `Registro de ocorrência: ${c.name} descreveu uma pessoa suspeita no ${district(c.district).name}. A descrição bate com você.`, "alert");
   s = advanceChapter(s);
   if (m.id === "m-roberto" && success && !s.ending) s = finishGame(s, r.outcome);
+  if (s.heat >= 100 && !s.ending) s = arrest(s);
   return s;
 }
 
@@ -518,14 +554,18 @@ export function chapterGoal(s: GameState) {
   const ch = CHAPTERS.find((c) => c.n === s.chapter)!;
   const storyDone = ch.goal.story.filter((id) => missionDone(s, id)).length;
   const any = ch.goal.anyOf ? ch.goal.anyOf.missions.filter((id) => missionDone(s, id)).length : 0;
+  const itemsOk = (ch.goal.items ?? []).every((i) => s.items.includes(i));
+  const moneyOk = s.money >= (ch.goal.money ?? 0);
   return {
     chapter: ch,
-    rep: Math.min(s.rep, ch.goal.rep),
+    money: Math.min(s.money, ch.goal.money ?? 0),
+    moneyOk,
+    itemsOk,
     storyDone,
     storyTotal: ch.goal.story.length,
     any,
     anyNeeded: ch.goal.anyOf?.count ?? 0,
-    complete: s.rep >= ch.goal.rep && storyDone === ch.goal.story.length && any >= (ch.goal.anyOf?.count ?? 0),
+    complete: moneyOk && itemsOk && storyDone === ch.goal.story.length && any >= (ch.goal.anyOf?.count ?? 0),
   };
 }
 
@@ -536,18 +576,22 @@ function advanceChapter(s0: GameState): GameState {
     const ch = CHAPTERS.find((c) => c.n === n)!;
     s = { ...s, chapter: n };
     s = log(s, `Capítulo ${n}: ${ch.title}`, "chapter");
-    s = msg(s, "sistema", `Novo capítulo: ${ch.title}. ${ch.subtitle} agora pode ser explorado quando você tiver nível e reputação suficientes.`, "system");
+    s = msg(s, "sistema", `Novo capítulo: ${ch.title}. ${ch.subtitle} pode ser explorado quando você tiver nível e ferramentas.`, "system");
     s = tx(s, `Bônus de capítulo concluído`, 100 * (n - 1), "desafio");
-    if (n === 2) s = msg(s, "clara", "Oi. Você não me conhece. Sou Clara Bastos, do jornal O Relógio. Ouvi falar do seu trabalho na Vila Jardim. Tem uma coisa estranha acontecendo no Mercado Central — panfletos de um tal Grupo Zênite. Se puder, descubra o que o Valdir da galeria sabe. Com cuidado.", "invite");
-    if (n === 3) s = msg(s, "clara", "Precisamos conversar pessoalmente. Estou no Largo do Relógio, na redação. Traga o que você tem.", "invite");
-    if (n === 4) s = msg(s, "mariana", "Ouvi falar do tal 'Plano Áurea'. Se precisar de dados para convencer gente grande nas Torres, me procure. — M.", "msg");
-    if (n === 5) s = msg(s, "roberto", "O gabinete do prefeito confirma uma audiência de dez minutos. Data a combinar. — Cerimonial do Paço Municipal", "invite");
+    if (n === 2) {
+      s = tx(s, "Dívida paga ao Lobo", -300, "divida");
+      s = msg(s, "lobo", "Recebi. Viu como é fácil? Agora some da minha frente. — Lobo", "msg");
+      s = msg(s, "zenite", "Soubemos do seu trabalho na Vila Jardim. Bom trabalho, mas sem autorização. Procure o Valdir, na galeria do Mercado Central. — Z.", "invite");
+    }
+    if (n === 3) s = msg(s, "noticias", "O Relógio: «Golpistas fazem vítimas em série na cidade», reportagem de Clara Bastos. A jornalista diz ter depoimentos e um retrato falado.", "news");
+    if (n === 4) s = msg(s, "diego", "Você está pisando no meu território. O Zênite tem um golpista só, e sou eu. Último aviso. — D.S.", "msg");
+    if (n === 5) s = msg(s, "zenite", "O Fundo Áurea. Três assinaturas: Celina, Otávio, o prefeito. Se você conseguir, a cidade é sua. — Z.", "invite");
   }
   return s;
 }
 
 function finishGame(s: GameState, outcome: Outcome): GameState {
-  const end = ENDINGS.find((x) => x.when({ outcome, integrity: s.integrity, liesCaught: s.stats.liesCaught, money: s.money, rep: s.rep }))!;
+  const end = ENDINGS.find((x) => x.when({ outcome, heat: s.heat, arrests: s.arrests, liesCaught: s.stats.liesCaught, money: s.money }))!;
   return log({ ...s, ending: { id: end.id, day: s.day } }, `Final: ${end.title}`, "chapter");
 }
 
@@ -591,14 +635,15 @@ function rollDay(s0: GameState, charge: boolean): GameState {
     const c = character(id);
     s = msg(s, id, `${pickOne(c.voice.greetAgain, r).replace("{player}", s.player.name)} Passa aqui quando puder. — ${c.nick ?? c.name.split(" ")[0]}`, "invite");
   }
-  // Dica de segurança na central de investigação
-  if (s.chapter >= 2 && r() < 0.5) s = msg(s, "seguranca", `Alerta de segurança: ${pickOne(SECURITY_TIPS, r)}`, "alert");
+  // Rádio da polícia
+  if (s.heat >= 40 || (s.chapter >= 2 && r() < 0.35)) s = msg(s, "policia", `Radar: ${pickOne(POLICE_ALERTS, r)}`, "alert");
+  if (s.heat >= 70) s = msg(s, "policia", "Radar: seu apelido foi citado num inquérito. Considere sumir por um tempo.", "alert");
   return s;
 }
 
 export function endDay(s0: GameState): GameState {
   if (s0.encounter) return s0;
-  let s: GameState = { ...s0, day: s0.day + 1, minute: DAY_START, energy: 100, dayStats: emptyDayStats(), claimed: [], visitsToday: [], stats: { ...s0.stats, days: s0.stats.days + 1 } };
+  let s: GameState = { ...s0, day: s0.day + 1, minute: DAY_START, energy: 100, dayStats: emptyDayStats(), claimed: [], visitsToday: [], heat: Math.max(0, s0.heat - 12), stats: { ...s0.stats, days: s0.stats.days + 1 } };
   s = log(s, `Dia ${s.day} começou.`, "day");
   s = rollDay(s, true);
   return s;
@@ -665,6 +710,7 @@ export function useConsumable(s: GameState, id: string): GameState {
   if (id === "cafe") return { ...s, consumables, energy: Math.min(100, s.energy + 30) };
   if (id === "dossie") return { ...s, consumables, dossie: true };
   if (id === "flores") return { ...s, consumables, flowers: true };
+  if (id === "sumico") return log({ ...s, consumables, heat: Math.max(0, s.heat - 30) }, "Sumiu por um tempo: o calor baixou.", "info");
   return s;
 }
 
@@ -681,27 +727,87 @@ export function takePerk(s: GameState, id: string): GameState {
   return log({ ...s, perks: [...s.perks, id] }, `Nova habilidade: ${PERKS.find((p) => p.id === id)!.name}`, "level");
 }
 
-// ---------- Investigação ----------
+// ---------- Calor, polícia e butim ----------
 
-export function caseAvailable(s: GameState, id: string): boolean {
-  const c = CASES.find((x) => x.id === id)!;
-  return c.requires.every((m) => missionDone(s, m));
+/** Quanto do calor de um golpe chega até você, depois das ferramentas e habilidades. */
+export function heatFactor(s: GameState): number {
+  let cut = 0;
+  for (const id of s.items) cut += item(id)?.heatCut ?? 0;
+  if (s.perks.includes("calma")) cut += 0.1;
+  if (s.flags.includes("sentinela-cego")) cut += 0.1;
+  if (s.flags.includes("clara-despistada")) cut += 0.1;
+  const ev = EVENTS.find((e) => e.id === s.event);
+  return Math.max(0.25, 1 - cut) * (ev?.heatMult ?? 1);
 }
 
-export function solveCase(s0: GameState, id: string, marked: string[], answerIndex: number): { state: GameState; score: number; passed: boolean } {
-  const c = CASES.find((x) => x.id === id);
-  if (!c || !caseAvailable(s0, id) || s0.cases[id]?.done) return { state: s0, score: 0, passed: false };
-  const correct = c.items.filter((i) => marked.includes(i.id) === i.suspicious).length;
-  const score = correct / c.items.length;
-  const passed = score >= 0.8 && answerIndex === c.question.answer;
-  let s: GameState = { ...s0, cases: { ...s0.cases, [id]: { done: passed, score } } };
-  if (passed) {
-    s = { ...s, xp: s.xp + c.reward.xp, rep: s.rep + c.reward.rep, flags: s.flags.includes(c.flag) ? s.flags : [...s.flags, c.flag] };
-    if (c.reward.money) s = tx(s, `Investigação: ${c.title}`, c.reward.money, "investigação");
-    s = log(s, `Caso resolvido: ${c.title}`, "case");
-    s = advanceChapter(s);
+function addHeat(s: GameState, raw: number, why: string): GameState {
+  const gain = Math.round(raw * heatFactor(s));
+  if (gain <= 0) return s;
+  return log({ ...s, heat: Math.min(100, s.heat + gain) }, `Calor +${gain} (${why}).`, "info");
+}
+
+function addLoot(s: GameState, kind: LootKind, label: string, owner: string, value: number): GameState {
+  const r = rngFrom(hash(`${s.seed}:loot:${s.counter}`));
+  const v = kind === "cartao" && s.items.includes("leitor") ? Math.round(value * 1.5) : value;
+  const it: LootItem = { id: s.counter, kind, label, owner, value: v, day: s.day, last4: kind === "cartao" ? String(1000 + Math.floor(r() * 9000)) : undefined };
+  return { ...s, counter: s.counter + 1, loot: [it, ...s.loot] };
+}
+
+/** O que dá para fazer com um item do butim e quanto rende. */
+export function lootOptions(s: GameState, l: LootItem) {
+  const sell = Math.round(l.value * (l.kind === "dados" && s.items.includes("site") ? 0.8 : 0.4));
+  let use: { ok: boolean; value: number; heat: number; need?: string } | null = null;
+  if (l.kind === "cartao") use = { ok: s.items.includes("kit-clone"), value: Math.round(l.value * (s.perks.includes("negociador") ? 1.05 : 0.9)), heat: 8, need: "kit-clone" };
+  if (l.kind === "senha" || l.kind === "acesso") use = { ok: s.items.includes("notebook"), value: Math.round(l.value * 0.9), heat: 6, need: "notebook" };
+  return { sell, use };
+}
+
+/** Vender ao receptador ou usar (cartão com o kit, senha/acesso com o notebook). */
+export function cashOut(s0: GameState, lootId: number, mode: "vender" | "usar"): GameState {
+  const l = s0.loot.find((x) => x.id === lootId);
+  if (!l || s0.encounter) return s0;
+  const o = lootOptions(s0, l);
+  let s: GameState = { ...s0, loot: s0.loot.filter((x) => x.id !== lootId) };
+  if (mode === "vender") {
+    s = tx(s, `Receptador: ${l.label}`, o.sell, "butim");
+    s = addHeat(s, 2, "venda ao receptador");
+  } else {
+    if (!o.use?.ok) return s0;
+    s = tx(s, `${l.kind === "cartao" ? "Cartão usado" : "Acesso usado"}: ${l.label}`, o.use.value, "butim");
+    s = addHeat(s, o.use.heat, l.kind === "cartao" ? "cartão clonado" : "acesso usado");
   }
-  return { state: s, score, passed };
+  s = { ...s, dayStats: { ...s.dayStats, earned: s.dayStats.earned + (mode === "vender" ? o.sell : o.use!.value) } };
+  if (s.heat >= 100 && !s.ending) s = arrest(s);
+  return advanceChapter(s);
+}
+
+/** A polícia chegou. */
+export function arrest(s0: GameState): GameState {
+  const arrests = s0.arrests + 1;
+  let s: GameState = { ...s0, arrests, encounter: null, loot: [] };
+  if (arrests >= 3) {
+    s = { ...s, ending: { id: "preso", day: s.day } };
+    return log(s, "Final: Atrás das grades", "chapter");
+  }
+  const lawyer = s.items.includes("advogado");
+  const lost = Math.max(0, Math.round(s.money * (lawyer ? 0.25 : 0.6)));
+  if (lost) s = tx(s, lawyer ? "Fiança (com advogado)" : "Fiança, advogado e bens apreendidos", -lost, "policia");
+  let toolLost = "";
+  if (!lawyer) {
+    const tools = s.items.filter((i) => item(i)?.kind === "tool").sort((a, b) => (item(b)?.price ?? 0) - (item(a)?.price ?? 0));
+    if (tools[0]) {
+      toolLost = item(tools[0])!.name;
+      s = { ...s, items: s.items.filter((i) => i !== tools[0]) };
+    }
+  }
+  s = { ...s, heat: 35, day: s.day + 2, minute: DAY_START, energy: 100, dayStats: emptyDayStats(), claimed: [], visitsToday: [] };
+  s = log(s, `Preso pela ${arrests}ª vez. Dois dias na delegacia.`, "fail");
+  s = msg(s, "policia", `Você passou dois dias detido. Perdeu ${fmtMoney(lost)}${toolLost ? ` e a polícia apreendeu: ${toolLost}` : ""}. Todo o butim foi apreendido. ${arrests === 2 ? "Na próxima, não tem fiança." : ""}`, "alert");
+  return rollDay(s, false);
+}
+
+function fmtMoney(n: number) {
+  return `₢ ${n.toLocaleString("pt-BR")}`;
 }
 
 export function readAll(s: GameState, from?: string): GameState {
@@ -715,7 +821,7 @@ export function migrate(raw: unknown): GameState | null {
   const g = raw as Partial<GameState>;
   if (!g.player || typeof g.money !== "number") return null;
   const base = newGame(g.player.name, g.player.avatar ?? 0, g.seed);
-  return { ...base, ...g, version: SAVE_VERSION, stats: { ...base.stats, ...(g.stats ?? {}) }, dayStats: { ...base.dayStats, ...(g.dayStats ?? {}) } } as GameState;
+  return { ...base, ...g, heat: g.heat ?? 0, arrests: g.arrests ?? 0, loot: g.loot ?? [], version: SAVE_VERSION, stats: { ...base.stats, ...(g.stats ?? {}) }, dayStats: { ...base.dayStats, ...(g.dayStats ?? {}) } } as GameState;
 }
 
 export const ALL_ITEMS = ITEMS;

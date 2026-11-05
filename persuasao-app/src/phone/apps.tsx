@@ -9,8 +9,8 @@ import { Bar, Money, SENDERS, fmt, useGame } from "../ui";
 import { PhoneHeader } from "./Phone";
 
 const CAT_LABEL: Record<TxCategory, string> = {
-  acordo: "Acordos",
-  bico: "Bicos",
+  acordo: "Golpes",
+  bico: "Golpes rápidos",
   loja: "Loja",
   aluguel: "Aluguel",
   transporte: "Transporte",
@@ -18,6 +18,9 @@ const CAT_LABEL: Record<TxCategory, string> = {
   investigação: "Investigação",
   inicial: "Saldo inicial",
   gasto: "Gastos em conversas",
+  butim: "Butim vendido ou usado",
+  policia: "Polícia e fiança",
+  divida: "Dívida com o Lobo",
 };
 
 export function Bank({ back }: { back: () => void }) {
@@ -46,7 +49,7 @@ export function Bank({ back }: { back: () => void }) {
 
   return (
     <div>
-      <PhoneHeader title="Banco Áurea" back={back} />
+      <PhoneHeader title="Conta laranja" back={back} />
       <div className="balance-card">
         <div className="tiny muted">Saldo disponível</div>
         <div className="amount">{fmt(s.money)}</div>
@@ -55,7 +58,7 @@ export function Bank({ back }: { back: () => void }) {
           <span className="tiny muted">{s.player.name.toUpperCase()}</span>
         </div>
         <div className="tiny muted" style={{ marginTop: 6 }}>
-          Conta e cartão fictícios do jogo — sem relação com bancos reais.
+          Conta e cartão fictícios, em nome de um laranja que também não existe.
         </div>
       </div>
       <div className="tabs" style={{ marginTop: 12 }}>
@@ -144,11 +147,11 @@ export function Bank({ back }: { back: () => void }) {
               <b className="red">{fmt(s.stats.moneySpent)}</b>
             </div>
             <div className="stat">
-              <span>Melhor acordo</span>
+              <span>Maior golpe</span>
               <b>{fmt(s.stats.bestDeal)}</b>
             </div>
             <div className="stat">
-              <span>Acordos</span>
+              <span>Golpes</span>
               <b>{s.stats.deals}</b>
             </div>
           </div>

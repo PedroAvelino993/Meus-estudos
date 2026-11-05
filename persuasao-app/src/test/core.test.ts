@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { CHARACTERS, DISTRICTS, ITEMS, MISSIONS, PERKS, character, mission } from "../content";
-import { CASES, CHAPTERS, CHALLENGES, EVENTS, GIGS } from "../content/story";
+import { CHAPTERS, CHALLENGES, EVENTS, GIGS } from "../content/story";
 import { ATTRS, type Mission } from "../core/types";
 import { acceptablePrice, answerSide, choose, newRelationship, offer, optionsFor, persuasionScore, resultOf, startEncounter, type PlayerCtx } from "../core/encounter";
 import { tacticEffect } from "../core/persona";
 import {
+  arrest,
   buy,
+  cashOut,
+  heatFactor,
+  lootOptions,
   canStart,
   chapterGoal,
   claimChallenge,
@@ -21,7 +25,6 @@ import {
   perkAvailable,
   RENT,
   say,
-  solveCase,
   startMission,
   takePerk,
   travel,
@@ -76,7 +79,7 @@ describe("conteúdo", () => {
   });
 
   it("missões só apontam para coisas que existem", () => {
-    const allFlags = new Set([...MISSIONS.flatMap((m) => m.flagsOnSuccess ?? []), ...CASES.map((c) => c.flag)]);
+    const allFlags = new Set([...MISSIONS.flatMap((m) => m.flagsOnSuccess ?? [])]);
     for (const m of MISSIONS) {
       const c = character(m.npc);
       expect(m.district, m.id).toBe(c.district);
@@ -97,19 +100,19 @@ describe("conteúdo", () => {
     }
   });
 
-  it("capítulos, casos e desafios estão consistentes", () => {
-    for (const ch of CHAPTERS) for (const id of [...ch.goal.story, ...(ch.goal.anyOf?.missions ?? [])]) expect(() => mission(id), id).not.toThrow();
-    for (const c of CASES) {
-      for (const id of c.requires) expect(() => mission(id)).not.toThrow();
-      expect(c.items.some((i) => i.suspicious) && c.items.some((i) => !i.suspicious), c.id).toBe(true);
-      expect(c.question.answer).toBeLessThan(c.question.options.length);
+  it("capítulos, ferramentas e desafios estão consistentes", () => {
+    for (const ch of CHAPTERS) {
+      for (const id of [...ch.goal.story, ...(ch.goal.anyOf?.missions ?? [])]) expect(() => mission(id), id).not.toThrow();
+      for (const it of ch.goal.items ?? []) expect(ITEMS.some((i) => i.id === it), it).toBe(true);
     }
+    for (const d of DISTRICTS) for (const it of d.unlock.items ?? []) expect(ITEMS.some((i) => i.id === it), it).toBe(true);
+    for (const m of MISSIONS) for (const it of m.requires.items ?? []) expect(ITEMS.some((i) => i.id === it), it).toBe(true);
     expect(CHALLENGES.length).toBeGreaterThanOrEqual(6);
     expect(EVENTS.length).toBeGreaterThanOrEqual(8);
   });
 
   it("nenhum texto do jogo contém número de cartão real: só cartões mascarados •••• 0000", () => {
-    const blob = JSON.stringify({ CASES, MISSIONS, CHARACTERS, GIGS: GIGS.map((g) => ({ ...g, negotiation: undefined })) });
+    const blob = JSON.stringify({ MISSIONS, CHARACTERS, GIGS: GIGS.map((g) => ({ ...g, negotiation: undefined })) });
     expect(blob).not.toMatch(/\b\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}\b/);
     expect(blob).not.toMatch(/senha:\s*\w/i);
   });
@@ -226,6 +229,7 @@ describe("jogo", () => {
   it("novo jogo começa com economia fictícia, pensão e capítulo 1", () => {
     const s = newGame("Alex", 0, 1);
     expect(s.money).toBe(50);
+    expect(s.heat).toBe(0);
     expect(s.chapter).toBe(1);
     expect(s.location).toBe("jardim");
     expect(s.transactions[0].label).toMatch(/Economias/);
@@ -261,7 +265,7 @@ describe("jogo", () => {
     expect(s.xp).toBeGreaterThan(0);
     expect(s.relationships.cida.met).toBe(1);
     expect(s.missions["m-cida"].attempts).toBe(1);
-    expect(s.history[0].text).toMatch(/Gostar|Aparecida|—/);
+    expect(s.history.some((h) => h.text.includes("Aparecida") || h.text.includes("Cida"))).toBe(true);
     expect(s.minute).toBeGreaterThan(s0.minute);
     expect(s.energy).toBeLessThan(s0.energy);
   });
@@ -286,7 +290,8 @@ describe("jogo", () => {
       if (s.energy < 20) s = endDay(s);
     }
     // Algumas tentativas podem falhar; dando mais dias, o capítulo fecha
-    for (let d = 0; d < 6 && s.chapter === 1; d++) {
+    for (let d = 0; d < 8 && s.chapter === 1; d++) {
+      for (const l of [...s.loot]) s = cashOut(s, l.id, "vender");
       s = endDay(s);
       for (const m of MISSIONS.filter((x) => x.chapter === 1 && missionAvailable(s, x))) if (s.energy > 20 && s.chapter === 1) s = play(s, m.id);
       for (const g of s.gigs.filter((x) => !x.done && character(x.char).district === "jardim")) if (s.energy > 20 && s.chapter === 1) s = play(s, `gig:${g.template}:${g.char}:${s.day}`);
@@ -343,16 +348,59 @@ describe("jogo", () => {
     expect(claimChallenge(after, c.id)).toBe(after);
   });
 
-  it("investigação: precisa acertar as marcações e a conclusão", () => {
-    const c = CASES[0];
+  it("golpe que dá certo gera butim e calor; o butim pode ser vendido ou usado", () => {
+    let s = play(newGame("Alex", 0, 11), "m-cida");
+    const rec = s.missions["m-cida"].best!;
+    if (["great", "good", "partial"].includes(rec)) {
+      expect(s.loot.length).toBeGreaterThan(0);
+      expect(s.heat).toBeGreaterThan(0);
+      const l = s.loot[0];
+      const money = s.money;
+      s = cashOut(s, l.id, "vender");
+      expect(s.money).toBeGreaterThan(money);
+      expect(s.loot.find((x) => x.id === l.id)).toBeUndefined();
+    }
+  });
+
+  it("usar um cartão exige o kit de clonagem e rende mais que vender", () => {
     let s = newGame("Alex", 0, 5);
-    expect(solveCase(s, c.id, [], 0).passed).toBe(false); // bloqueado
-    s = { ...s, missions: { ...s.missions, ...Object.fromEntries(c.requires.map((id) => [id, { attempts: 1, best: "good" as const, lastDay: 1, outcomes: ["good" as const] }])) } };
-    const wrong = solveCase(s, c.id, [], c.question.answer);
-    expect(wrong.passed).toBe(false);
-    const right = solveCase(s, c.id, c.items.filter((i) => i.suspicious).map((i) => i.id), c.question.answer);
-    expect(right.passed).toBe(true);
-    expect(right.state.flags).toContain(c.flag);
+    s = { ...s, loot: [{ id: 999, kind: "cartao", label: "cartão de teste", owner: "cida", value: 1000, last4: "1234", day: 1 }] };
+    expect(lootOptions(s, s.loot[0]).use?.ok).toBe(false);
+    expect(cashOut(s, 999, "usar")).toBe(s);
+    s = { ...s, items: [...s.items, "kit-clone"] };
+    const o = lootOptions(s, s.loot[0]);
+    expect(o.use!.value).toBeGreaterThan(o.sell);
+    const after = cashOut(s, 999, "usar");
+    expect(after.money).toBe(s.money + o.use!.value);
+    expect(after.heat).toBeGreaterThan(s.heat);
+  });
+
+  it("ferramentas cortam o calor; à noite ele esfria", () => {
+    const s = newGame("Alex", 0, 5);
+    const base = heatFactor({ ...s, event: "sol" });
+    expect(heatFactor({ ...s, event: "sol", items: [...s.items, "chip", "laranjas"] })).toBeLessThan(base);
+    expect(endDay({ ...s, heat: 50 }).heat).toBe(38);
+  });
+
+  it("calor em 100 leva à prisão; na terceira, fim de jogo", () => {
+    let s = { ...newGame("Alex", 0, 5), money: 1000, items: ["roupa-comum", "tema-onix", "kit-clone"] };
+    s = arrest(s);
+    expect(s.arrests).toBe(1);
+    expect(s.money).toBe(400);
+    expect(s.items).not.toContain("kit-clone");
+    expect(s.heat).toBe(35);
+    expect(s.loot).toEqual([]);
+    const lawyer = arrest({ ...s, money: 1000, items: [...s.items, "advogado", "chip"] });
+    expect(lawyer.money).toBe(750);
+    expect(lawyer.items).toContain("chip");
+    const end = arrest(lawyer);
+    expect(end.ending?.id).toBe("preso");
+  });
+
+  it("bairros caros pedem ferramentas", () => {
+    const s = { ...newGame("Alex", 0, 5), chapter: 4, xp: xpForLevel(10) };
+    expect(districtUnlocked(s, "torres")).toBe(false);
+    expect(districtUnlocked({ ...s, items: [...s.items, "identidade"] }, "torres")).toBe(true);
   });
 
   it("conquistas são marcadas uma vez", () => {

@@ -1,21 +1,25 @@
-// Visão de um bairro: moradores, missões, bicos e visitas. Inclui a ficha do personagem e o briefing.
+// Visão de um bairro: moradores, alvos, golpes rápidos e visitas. Inclui a ficha do personagem e o briefing.
 
 import { BatteryMedium, CircleDollarSign, Clock, Coffee, Heart, Lock, MapPin, Sparkles, Target, Users } from "lucide-react";
 import Portrait from "../components/Portrait";
 import { CHARACTERS, MISSIONS, character, district } from "../content";
 import { hash } from "../core/rng";
-import { DAY_END, anyMission, canStart, clock, districtUnlocked, gigsHere, missionAvailable, missionLock, startMission } from "../core/game";
+import { DAY_END, anyMission, canStart, heatFactor, clock, districtUnlocked, gigsHere, missionAvailable, missionLock, startMission } from "../core/game";
 import type { MissionType } from "../core/types";
 import { Bar, CloseBtn, Difficulty, Modal, fmt, useGame } from "../ui";
 
 export const TYPE_LABEL: Record<MissionType, string> = {
-  pitch: "Proposta",
+  pitch: "Conto do vigário",
   negotiation: "Negociação",
   mediation: "Mediação",
   investigation: "Investigação",
-  favor: "Favor",
-  contract: "Contrato",
-  duel: "Duelo de argumentos",
+  favor: "Sondagem",
+  contract: "Papelada falsa",
+  duel: "Duelo de malandros",
+  phishing: "Pesca de dados",
+  clone: "Clonagem de cartão",
+  impersonation: "Falsa identidade",
+  heist: "Grande golpe",
 };
 
 export default function District() {
@@ -65,7 +69,7 @@ export default function District() {
                 </span>
               )}
               {!hasMission && hasGig && (
-                <span className="person-flag chip green" title="Tem um bico">
+                <span className="person-flag chip green" title="Alvo de golpe rápido">
                   <CircleDollarSign size={11} />
                 </span>
               )}
@@ -88,7 +92,7 @@ export default function District() {
       <div className="grid two">
         <div className="card">
           <div className="card-title">
-            <Target size={18} /> Missões
+            <Target size={18} /> Alvos
           </div>
           <div className="list">
             {all.map((m) => {
@@ -102,7 +106,7 @@ export default function District() {
                     <div className="small muted">
                       {character(m.npc).name.split(" ")[0]} · {TYPE_LABEL[m.type]} · <Difficulty n={m.difficulty} />
                     </div>
-                    {!lock.ok && <div className={`tiny ${done ? "green" : "gold"}`}>{done ? `Concluída (${s.missions[m.id]?.best === "great" ? "sucesso total" : s.missions[m.id]?.best === "good" ? "acordo" : "meio-termo"})` : lock.reason}</div>}
+                    {!lock.ok && <div className={`tiny ${done ? "green" : "gold"}`}>{done ? `Concluída (${s.missions[m.id]?.best === "great" ? "golpe perfeito" : s.missions[m.id]?.best === "good" ? "caiu no golpe" : "pela metade"})` : lock.reason}</div>}
                   </div>
                   {m.story && <span className="chip gold">História</span>}
                 </button>
@@ -112,7 +116,7 @@ export default function District() {
         </div>
         <div className="card">
           <div className="card-title">
-            <CircleDollarSign size={18} /> Bicos do dia
+            <CircleDollarSign size={18} /> Golpes rápidos
           </div>
           <div className="list">
             {gigs.map((m) => (
@@ -127,10 +131,10 @@ export default function District() {
                 <span className="chip green">{fmt(m.rewards.money)}</span>
               </button>
             ))}
-            {!gigs.length && <div className="empty">Os bicos daqui já foram feitos hoje. Amanhã aparecem outros.</div>}
+            {!gigs.length && <div className="empty">Os golpes rápidos daqui já foram feitos hoje. Amanhã aparecem outros alvos.</div>}
           </div>
           <p className="tiny muted" style={{ marginTop: 10 }}>
-            Bicos são serviços rápidos que mudam todos os dias. Pagam pouco, mas ajudam a fechar o mês e treinar.
+            Golpes rápidos mudam todos os dias: pagam pouco, esquentam pouco e ajudam a pagar o aluguel e treinar a lábia.
           </p>
         </div>
       </div>
@@ -214,7 +218,7 @@ export function CharacterSheet({ id, onClose }: { id: string; onClose: () => voi
           )}
         </div>
         <div>
-          <b className="small">Necessidades descobertas</b>
+          <b className="small">Pontos fracos descobertos</b>
           {rel?.known.length ? (
             <ul className="small" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
               {rel.known.map((k) => {
@@ -271,7 +275,7 @@ export function CharacterSheet({ id, onClose }: { id: string; onClose: () => voi
             </div>
             <div className="grow">
               <b>{gig.title}</b>
-              <div className="tiny muted">Bico do dia · {fmt(gig.rewards.money)}</div>
+              <div className="tiny muted">Golpe rápido · {fmt(gig.rewards.money)}</div>
             </div>
           </button>
         )}
@@ -281,7 +285,7 @@ export function CharacterSheet({ id, onClose }: { id: string; onClose: () => voi
           </div>
           <div className="grow">
             <b>Um café com {c.nick ?? c.name.split(" ")[0]}</b>
-            <div className="tiny muted">{visited ? "Vocês já conversaram hoje." : here ? "Sem pedido nenhum: conhecer melhor a pessoa." : `Vá até ${d.name}`}</div>
+            <div className="tiny muted">{visited ? "Vocês já conversaram hoje." : here ? "Sem golpe: ganhar confiança e sondar pontos fracos." : `Vá até ${d.name}`}</div>
           </div>
         </button>
       </div>
@@ -323,7 +327,7 @@ export function Briefing({ id, onClose }: { id: string; onClose: () => void }) {
       <div className="modal-head">
         <div>
           <div className="eyebrow">
-            {isVisit ? "Visita" : id.startsWith("gig:") ? "Bico do dia" : TYPE_LABEL[m.type]} {m.story ? "· História" : ""}
+            {isVisit ? "Sondagem" : id.startsWith("gig:") ? "Golpe rápido" : TYPE_LABEL[m.type]} {m.story ? "· História" : ""}
           </div>
           <h2 style={{ marginTop: 2 }}>{m.title}</h2>
         </div>
@@ -342,7 +346,7 @@ export function Briefing({ id, onClose }: { id: string; onClose: () => void }) {
         </div>
       </div>
       <p className="small">
-        <b className="gold">Cliente:</b> {m.client}
+        <b className="gold">Quem encomendou:</b> {m.client}
       </p>
       <p className="small muted" style={{ marginTop: 6 }}>
         {m.brief}
@@ -366,10 +370,10 @@ export function Briefing({ id, onClose }: { id: string; onClose: () => void }) {
           <b>{m.rewards.xp}</b>
           <span>XP</span>
         </div>
-        {m.rewards.rep > 0 && (
+        {!isVisit && (
           <div className="reward">
-            <b>+{m.rewards.rep}</b>
-            <span>Reputação</span>
+            <b className="red">+{Math.round((m.heat ?? 8) * heatFactor(s))}</b>
+            <span>Calor</span>
           </div>
         )}
         <div className="reward">
@@ -379,11 +383,16 @@ export function Briefing({ id, onClose }: { id: string; onClose: () => void }) {
       </div>
       {m.negotiation && (
         <p className="small muted">
-          Negociação: {m.negotiation.npcSells ? "você compra" : "você vende"} {m.negotiation.item}. Seu cliente autoriza {m.negotiation.npcSells ? "pagar até" : "vender por no mínimo"} <b className="gold">{fmt(m.negotiation.clientLimit)}</b>. Quanto melhor o preço, maior a sua comissão.
+          Negociação: {m.negotiation.npcSells ? "você compra" : "você vende"} {m.negotiation.item}. Seu limite: {m.negotiation.npcSells ? "pagar no máximo" : "receber no mínimo"} <b className="gold">{fmt(m.negotiation.clientLimit)}</b>. Quanto melhor o preço, maior o lucro.
         </p>
       )}
-      {rel?.known.length ? <p className="small green" style={{ marginTop: 8 }}>Você já sabe {rel.known.length} coisa(s) importante(s) sobre {c.name.split(" ")[0]}: elas abrem novas falas.</p> : null}
-      {s.dossie && <p className="small blue" style={{ marginTop: 6 }}>Seu dossiê vai revelar uma necessidade escondida antes da conversa.</p>}
+      {m.loot?.length ? (
+        <p className="small" style={{ marginTop: 6 }}>
+          <b className="gold">Pode render:</b> {m.loot.map((l) => `${l.label} (≈ ${fmt(l.value)})`).join(" · ")}
+        </p>
+      ) : null}
+      {rel?.known.length ? <p className="small green" style={{ marginTop: 8 }}>Você já conhece {rel.known.length} ponto(s) fraco(s) de {c.name.split(" ")[0]}: use isso na conversa.</p> : null}
+      {s.dossie && <p className="small blue" style={{ marginTop: 6 }}>O dossiê vai revelar um ponto fraco antes da conversa.</p>}
       {s.flowers && <p className="small green" style={{ marginTop: 6 }}>Você leva flores: a conversa começa com mais afinidade.</p>}
       {outOfHours && <p className="small gold" style={{ marginTop: 6 }}>Fora do horário de {c.name.split(" ")[0]} ({c.hours[0]}h–{c.hours[1]}h): a paciência começa menor.</p>}
       {s.energy < 30 && (

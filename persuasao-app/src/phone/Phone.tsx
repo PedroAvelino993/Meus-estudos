@@ -7,16 +7,14 @@ import { clock, unread } from "../core/game";
 import { useGame } from "../ui";
 import { Bank, Contacts, Messages } from "./apps";
 import { Investigation, Profile, SettingsApp, Shop } from "./apps2";
-import { caseAvailable } from "../core/game";
-import { CASES } from "../content/story";
 import { perkPoints } from "../core/game";
 
 export const APPS = [
-  { id: "banco", name: "Banco", icon: Landmark, color: "linear-gradient(135deg,#c9a44c,#7a5e1f)" },
+  { id: "banco", name: "Conta", icon: Landmark, color: "linear-gradient(135deg,#c9a44c,#7a5e1f)" },
   { id: "contatos", name: "Contatos", icon: Contact, color: "linear-gradient(135deg,#3fbf8a,#1d6e4c)" },
   { id: "mensagens", name: "Mensagens", icon: MessageCircle, color: "linear-gradient(135deg,#5b8fd1,#2a4f86)" },
-  { id: "investigacao", name: "Investigação", icon: ShieldAlert, color: "linear-gradient(135deg,#3fa7a0,#1a5754)" },
-  { id: "loja", name: "Loja", icon: ShoppingBag, color: "linear-gradient(135deg,#b5655b,#6e2f28)" },
+  { id: "investigacao", name: "Central", icon: ShieldAlert, color: "linear-gradient(135deg,#3fa7a0,#1a5754)" },
+  { id: "loja", name: "Mercado", icon: ShoppingBag, color: "linear-gradient(135deg,#b5655b,#6e2f28)" },
   { id: "perfil", name: "Perfil", icon: User, color: "linear-gradient(135deg,#9a7bc9,#54398a)" },
   { id: "ajustes", name: "Ajustes", icon: Settings, color: "linear-gradient(135deg,#6b7585,#353c48)" },
 ] as const;
@@ -43,7 +41,7 @@ export default function Phone({ app, setApp, onClose }: { app: string; setApp: (
   const home = () => setApp("home");
   const badges: Record<string, number> = {
     mensagens: unread(s),
-    investigacao: CASES.filter((c) => caseAvailable(s, c.id) && !s.cases[c.id]?.done).length,
+    investigacao: s.loot.length,
     perfil: Math.max(0, perkPoints(s)),
   };
   return (
@@ -76,7 +74,7 @@ export default function Phone({ app, setApp, onClose }: { app: string; setApp: (
                 ))}
               </div>
               <p className="center tiny muted" style={{ marginTop: 36 }}>
-                Aparelho e economia 100% fictícios.
+                Aparelho, contas e cartões 100% fictícios.
               </p>
             </div>
           )}

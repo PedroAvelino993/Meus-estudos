@@ -65,7 +65,7 @@ export const LARGO: Character[] = [
         id: "sobrinhos",
         question: "Meus sobrinhos mandaram o senhor aqui?",
         options: [
-          { text: "Garantir que não e explicar quem contratou você", effect: { trust: 12, suspicion: -10 }, reply: "Hum. Acredito. Por enquanto.", kind: "honest" },
+          { text: "Garantir que não e contar, com detalhes, a sua história de cobertura", effect: { trust: 12, suspicion: -10 }, reply: "Hum. Acredito. Por enquanto.", kind: "honest" },
           { text: "Desconversar", effect: { suspicion: 15, trust: -6 }, reply: "Não respondeu. Interessante.", kind: "evasive" },
         ],
       },
@@ -347,7 +347,7 @@ export const LARGO: Character[] = [
         id: "fonte",
         question: "Como você sabe disso? Quem te contou?",
         options: [
-          { text: "Explicar a origem exata da informação", effect: { trust: 12, credibility: 8 }, reply: "Ok. Isso eu consigo checar.", kind: "honest" },
+          { text: "Dar uma origem plausível e cheia de detalhes para a informação", effect: { trust: 12, credibility: 8 }, reply: "Ok. Isso eu consigo checar.", kind: "honest" },
           { text: "Dizer que não pode revelar a fonte", effect: { suspicion: 6, credibility: 2 }, reply: "Justo. Mas aí eu preciso checar tudo do zero.", kind: "evasive" },
           { text: "Inventar uma fonte de dentro da prefeitura", effect: { interest: 10 }, reply: "Da prefeitura? Quem?", kind: "bluff", claim: { key: "fonte", value: "prefeitura", label: "sua fonte é da prefeitura" } },
         ],

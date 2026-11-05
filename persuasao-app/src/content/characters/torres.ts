@@ -64,7 +64,7 @@ export const TORRES: Character[] = [
         id: "custo-por-pessoa",
         question: "Qual é o custo por pessoa atendida?",
         options: [
-          { text: "Dar o número real: ₢ 380 por pessoa", effect: { trust: 8, credibility: 8 }, reply: "Razoável. Comparável ao mercado.", kind: "honest", claim: { key: "custo", value: "380", label: "o custo é de ₢ 380 por pessoa" } },
+          { text: "Dar um número preciso e quebrado, que soa verdadeiro: ₢ 380 por pessoa", effect: { trust: 8, credibility: 8 }, reply: "Razoável. Comparável ao mercado.", kind: "honest", claim: { key: "custo", value: "380", label: "o custo é de ₢ 380 por pessoa" } },
           { text: "Arredondar para baixo: ₢ 150", effect: { interest: 10 }, reply: "Cento e cinquenta? Barato demais. Desconfio.", kind: "bluff", claim: { key: "custo", value: "150", label: "o custo é de ₢ 150 por pessoa" } },
         ],
       },

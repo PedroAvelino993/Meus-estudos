@@ -73,7 +73,7 @@ export const CAMPUS: Character[] = [
         id: "conflito",
         question: "Você tem algum interesse financeiro nisso?",
         options: [
-          { text: "Dizer que recebe comissão se ela aceitar", effect: { trust: 10, suspicion: -8 }, reply: "Transparência. É o mínimo, mas é raro.", kind: "honest" },
+          { text: "Admitir uma comissão pequena, para parecer transparente", effect: { trust: 10, suspicion: -8 }, reply: "Transparência. É o mínimo, mas é raro.", kind: "honest" },
           { text: "Negar qualquer interesse", effect: { suspicion: 6 }, reply: "Ninguém faz nada de graça. Mas anotado.", kind: "bluff", claim: { key: "interesse", value: "nenhum", label: "você não ganha nada com isso" } },
         ],
       },
@@ -284,7 +284,7 @@ export const CAMPUS: Character[] = [
         id: "quem-financia",
         question: "Quem está pagando por esse evento?",
         options: [
-          { text: "Dizer quem financia, com os nomes", effect: { trust: 12, suspicion: -10 }, reply: "Pelo menos você não esconde.", kind: "honest" },
+          { text: "Citar nomes e cargos com segurança, como quem decorou o roteiro", effect: { trust: 12, suspicion: -10 }, reply: "Pelo menos você não esconde.", kind: "honest" },
           { text: "Dizer que é 'parceria institucional'", effect: { suspicion: 10 }, reply: "Parceria institucional. Isso não quer dizer nada.", kind: "evasive" },
         ],
       },

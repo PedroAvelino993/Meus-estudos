@@ -65,7 +65,7 @@ export const PALMEIRAS: Character[] = [
         id: "porque",
         question: "Por que você faz isso, meu jovem? Ninguém faz nada de graça.",
         options: [
-          { text: "Dizer a verdade: é seu trabalho, mas você acredita no projeto", effect: { trust: 10, credibility: 5 }, reply: "Ao menos é sincero. Isso é raro nesta sala.", kind: "honest" },
+          { text: "Dizer que é o seu trabalho, mas que acredita na causa", effect: { trust: 10, credibility: 5 }, reply: "Ao menos é sincero. Isso é raro nesta sala.", kind: "honest" },
           { text: "Dizer que faz por pura vocação, sem ganhar nada", effect: { affinity: 6 }, reply: "Pura vocação. Sei.", kind: "bluff", claim: { key: "pagamento", value: "voluntario", label: "você faz isso sem ganhar nada" } },
         ],
       },
@@ -279,7 +279,7 @@ export const PACO: Character[] = [
         id: "quem-apoia",
         question: "Quem mais apoia essa proposta? Nomes.",
         options: [
-          { text: "Listar apenas os apoios reais que você conseguiu", effect: { trust: 10, credibility: 8 }, reply: "Nomes reais. Bom. Vou verificar.", kind: "honest" },
+          { text: "Listar só os nomes que você consegue sustentar se ele ligar para conferir", effect: { trust: 10, credibility: 8 }, reply: "Nomes reais. Bom. Vou verificar.", kind: "honest" },
           { text: "Exagerar a lista de apoios", effect: { interest: 10 }, reply: "Muitos nomes. Vou mandar verificar cada um.", kind: "bluff", claim: { key: "apoios", value: "muitos", label: "a proposta tem dezenas de apoios" } },
         ],
       },
