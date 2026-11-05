@@ -2,17 +2,17 @@
 // negociação de preço, contraproposta e resultado.
 
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Check, Eye, Gauge, HandCoins, MessageCircleQuestion, NotebookPen, Sparkles, TriangleAlert, Undo2, X } from "lucide-react";
+import { BookOpen, Check, DoorOpen, Eye, Gauge, HandCoins, Lightbulb, MessageCircleQuestion, NotebookPen, SendHorizontal, Sparkles, TriangleAlert, X } from "lucide-react";
 import Portrait from "../components/Portrait";
 import { character, district } from "../content";
-import { acceptablePrice, optionsFor, persuasionScore, resultOf, type LogEntry } from "../core/encounter";
-import { answer, anyMission, finishEncounter, makeOffer, playerCtx, refuseCounter, say, takeCounter } from "../core/game";
+import { persuasionScore, resultOf, type LogEntry } from "../core/encounter";
+import { understand } from "../core/understand";
+import { anyMission, finishEncounter, leaveEncounter, playerCtx, talk } from "../core/game";
 import { moodFace, tellsOf } from "../core/persona";
 import { ATTRS, ATTR_LABEL, OUTCOME_LABEL, TACTIC_LABEL, type Attr, type Attrs } from "../core/types";
 import { Bar, Money, fmt, sfx, useGame } from "../ui";
 
 const band = (v: number) => (v < 25 ? "baixa" : v < 50 ? "média" : v < 75 ? "alta" : "muito alta");
-const RISKY = new Set(["pressure", "bluff", "urgency", "flattery"]);
 
 function Deltas({ d }: { d: Partial<Attrs> }) {
   const items = (Object.entries(d) as [Attr, number][]).filter(([, v]) => Math.abs(v) >= 1);
@@ -65,40 +65,41 @@ export default function Encounter() {
   const typing = shown < e.log.length && e.log[shown].who === "npc";
   const busy = shown < e.log.length;
 
-  const opts = optionsFor(e, m, c, ctx);
   const visibleLog = e.log.slice(0, shown);
   const lastNpc = [...visibleLog].reverse().find((l) => l.who === "npc");
   const face = e.status === "done" && !busy ? (e.outcome === "great" || e.outcome === "good" || e.outcome === "partial" ? "happy" : e.outcome === "walkout" ? "angry" : "sad") : moodFace(e.attrs, lastNpc?.reaction ?? e.lastReaction);
   const score = persuasionScore(e.attrs);
 
-  const choose = (id: string) => {
-    if (busy) return;
+  const [draft, setDraft] = useState("");
+  const [hint, setHint] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const preview = draft.trim().length > 3 && !e.pending && !e.counter ? understand(draft, e, m, c, ctx) : null;
+  useEffect(() => {
+    if (!busy && e.status === "active" && window.innerWidth >= 900) inputRef.current?.focus();
+  }, [busy, e.status]);
+
+  const send = () => {
+    const text = draft.trim();
+    if (busy || !text || e.status !== "active") return;
     sfx("tap", prefs.sound);
     const before = s.encounter!;
-    const after = act((g) => say(g, id)).encounter;
-    if (after && after.liesCaught > before.liesCaught) {
+    let after = before;
+    act((g) => {
+      const r = talk(g, text);
+      after = r.state.encounter ?? before;
+      return r.state;
+    });
+    setDraft("");
+    setHint(false);
+    if (after.liesCaught > before.liesCaught) {
       sfx("bad", prefs.sound);
       toast({ text: `${c.name.split(" ")[0]} percebeu uma contradição.`, tone: "red", icon: TriangleAlert });
-    } else if (after && after.known.length > before.known.length) {
+    } else if (after.known.length > before.known.length) {
       sfx("good", prefs.sound);
       toast({ text: "Nova necessidade descoberta!", tone: "green", icon: Sparkles });
     }
   };
 
-  // Atalhos de teclado: 1–9 escolhem a opção
-  useEffect(() => {
-    const k = (ev: KeyboardEvent) => {
-      if (busy || ev.target instanceof HTMLInputElement) return;
-      const n = Number(ev.key);
-      if (!n) return;
-      if (e.pending) {
-        const o = e.pending.options[n - 1];
-        if (o) act((g) => answer(g, n - 1));
-      } else if (!e.counter && opts[n - 1]) choose(opts[n - 1].id);
-    };
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  });
 
   const extras = (
     <>
@@ -220,48 +221,59 @@ export default function Encounter() {
           )}
         </div>
 
-        {!busy && e.status === "active" && e.pending && (
-          <div className="options side-event">
-            <div className="row small">
-              <MessageCircleQuestion size={16} className="blue" />
-              <b>{e.pending.kind === "probe" ? "Pergunta inesperada" : "Interrupção"}</b>
+        {!busy && e.status === "active" && (
+          <div className="composer">
+            {e.pending && (
+              <div className="row small composer-note">
+                <MessageCircleQuestion size={15} className="blue" />
+                <span>{e.pending.kind === "probe" ? "Pergunta inesperada: responda do seu jeito." : "Interrupção: o que você faz?"}</span>
+              </div>
+            )}
+            {e.counter && <CounterInfo />}
+            {hint && <Hints />}
+            {preview && (
+              <div className="row wrap composer-note tiny">
+                <span className="muted">Soa como:</span>
+                <span className="chip">{preview.tactic === "close" ? (m.negotiation ? "Falar de valor" : "Fazer a proposta") : preview.tactic === "leave" ? "Encerrar a conversa" : TACTIC_LABEL[preview.tactic]}</span>
+                {preview.matched?.insight && <span className="chip green">usa o que você sabe</span>}
+                {preview.matched?.contradicts && <span className="chip red">contradiz: {preview.matched.contradicts}</span>}
+                {preview.matched?.cost ? <span className="chip gold">custa {fmt(preview.matched.cost)}</span> : null}
+              </div>
+            )}
+            <div className="composer-row">
+              <textarea
+                ref={inputRef}
+                className="composer-input"
+                rows={1}
+                value={draft}
+                maxLength={400}
+                placeholder={e.pending ? "Responda…" : e.counter ? (m.negotiation ? "Ex.: «Te pago 320» ou «Aceito»" : "Aceitar o meio-termo ou continuar convencendo…") : `Escreva para ${c.nick ?? c.name.split(" ")[0]}…`}
+                aria-label="Sua mensagem"
+                onChange={(ev) => setDraft(ev.target.value)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" && !ev.shiftKey) {
+                    ev.preventDefault();
+                    send();
+                  }
+                }}
+              />
+              <button className="send-btn" onClick={send} disabled={!draft.trim()} aria-label="Enviar">
+                <SendHorizontal size={19} />
+              </button>
             </div>
-            {e.pending.options.map((o, i) => (
-              <button key={i} className={`option ${o.kind === "bluff" ? "risky" : ""}`} onClick={() => act((g) => answer(g, i))}>
-                <span className="kbd">{i + 1}</span>
-                <span className="opt-text">{o.text}</span>
-                {o.kind === "bluff" && <span className="chip red">Blefe</span>}
+            <div className="row between composer-tools">
+              <button className="btn ghost sm" onClick={() => setHint((h) => !h)}>
+                <Lightbulb size={14} /> {hint ? "Esconder dica" : "Dica"}
               </button>
-            ))}
-          </div>
-        )}
-
-        {!busy && e.status === "active" && e.counter && <CounterBox />}
-
-        {!busy && e.status === "active" && !e.pending && !e.counter && (
-          <div className="options">
-            {opts.map((o, i) => (
               <button
-                key={o.id}
-                className={`option ${o.insight ? "insight" : ""} ${o.bluff || o.contradicts || (RISKY.has(o.tactic) && !o.universal) ? "risky" : ""} ${o.universal ? "universal" : ""} ${o.tactic === "leave" ? "leave" : ""} ${o.tactic === "close" ? "close" : ""}`}
-                style={{ animationDelay: `${i * 40}ms` }}
-                onClick={() => choose(o.id)}
+                className="btn ghost sm"
+                onClick={() => {
+                  if (confirm(`Encerrar a conversa com ${c.name.split(" ")[0]}? A missão fica para outro dia.`)) act((g) => leaveEncounter(g));
+                }}
               >
-                <span className="kbd">{i + 1}</span>
-                <span className="opt-text">{o.text}</span>
-                <span className="opt-tags">
-                  {o.insight && <span className="chip green">Você sabe disso</span>}
-                  {o.bluff && <span className="chip red">Blefe</span>}
-                  {o.contradicts && (
-                    <span className="chip red" title={`Antes você disse: ${o.contradicts}`}>
-                      Contradiz
-                    </span>
-                  )}
-                  {o.cost ? <span className="chip gold">{fmt(o.cost)}</span> : null}
-                  {o.tactic !== "leave" && o.tactic !== "close" && !(o.bluff && o.tactic === "bluff") && <span className="chip">{TACTIC_LABEL[o.tactic]}</span>}
-                </span>
+                <DoorOpen size={14} /> Sair da conversa
               </button>
-            ))}
+            </div>
           </div>
         )}
 
@@ -279,75 +291,62 @@ export default function Encounter() {
   );
 }
 
-function CounterBox() {
-  const { s, act, prefs } = useGame();
+function CounterInfo() {
+  const { s } = useGame();
   const e = s.encounter!;
   const m = anyMission(s, e.missionId);
   const n = m.negotiation;
   const counter = e.counter!;
-  const [price, setPrice] = useState(() => (n ? (n.npcSells ? Math.min(n.clientLimit, Math.round((n.fair * 0.8) / 5) * 5) : Math.max(n.clientLimit, Math.round((n.fair * 1.15) / 5) * 5)) : 0));
   if (!n) {
     return (
-      <div className="options">
-        <p className="small">
-          <b>Contraproposta:</b> {counter.text}
-        </p>
-        <div className="row wrap">
-          <button className="btn green" onClick={() => act((g) => takeCounter(g))}>
-            <Check size={16} /> Aceitar o meio-termo
-          </button>
-          <button className="btn" onClick={() => act((g) => refuseCounter(g))}>
-            <Undo2 size={16} /> Recusar e continuar conversando
-          </button>
-        </div>
-        <p className="tiny muted">O meio-termo conta como acordo, mas rende menos. Recusar custa um pouco de paciência.</p>
+      <div className="composer-note small">
+        <b>Contraproposta:</b> {counter.text} <span className="muted tiny">(Aceitar conta como acordo, mas rende menos. Recusar custa um pouco de paciência.)</span>
       </div>
     );
   }
-  const lo = Math.round((n.fair * 0.4) / 5) * 5;
-  const hi = Math.round((Math.max(n.anchor, n.clientLimit, n.fair) * 1.5) / 5) * 5;
-  const overLimit = n.npcSells ? price > n.clientLimit : price < n.clientLimit;
-  const isCounter = counter.text === "Contraproposta";
-  const counterOk = counter.price !== undefined && !(n.npcSells ? counter.price > n.clientLimit : counter.price < n.clientLimit);
-  void acceptablePrice;
   return (
-    <div className="options offer-box">
-      <div className="row between small">
-        <span>
-          <HandCoins size={15} className="gold" /> <b>{n.npcSells ? "Quanto você oferece" : "Quanto você pede"}</b> pelo {n.item}?
-        </span>
-        <span className="muted">
-          Limite do cliente: <b className="gold">{fmt(n.clientLimit)}</b>
-        </span>
+    <div className="composer-note small">
+      <div className="row wrap" style={{ gap: 6 }}>
+        <HandCoins size={15} className="gold" />
+        <b>Negociando o {n.item}</b>
+        {counter.price !== undefined && <span className="chip">na mesa: {fmt(counter.price)}</span>}
+        <span className="chip gold">limite do cliente: {fmt(n.clientLimit)}</span>
+        <span className="chip">mercado ≈ {fmt(n.fair)}</span>
       </div>
-      <div className="offer-value">{fmt(price)}</div>
-      <input type="range" min={lo} max={hi} step={5} value={price} onChange={(ev) => setPrice(Number(ev.target.value))} aria-label="Valor da oferta" />
-      <div className="offer-scale">
-        <span>{fmt(lo)}</span>
-        <span>Preço de mercado ≈ {fmt(n.fair)}</span>
-        <span>{fmt(hi)}</span>
-      </div>
-      {overLimit && <p className="tiny red">Esse valor passa do limite que o seu cliente autorizou.</p>}
-      <div className="row wrap">
-        <button
-          className="btn primary"
-          onClick={() => {
-            sfx("tap", prefs.sound);
-            act((g) => makeOffer(g, price));
-          }}
-        >
-          Oferecer {fmt(price)}
-        </button>
-        {counter.price !== undefined && counterOk && (isCounter || counter.price === n.anchor) && (
-          <button className="btn green" disabled={!counterOk} onClick={() => act((g) => takeCounter(g))} title={counterOk ? "" : "Passa do limite do cliente"}>
-            <Check size={16} /> Aceitar {fmt(counter.price)}
-          </button>
-        )}
-        <button className="btn ghost" onClick={() => act((g) => refuseCounter(g))}>
-          <Undo2 size={16} /> Voltar a conversar
-        </button>
-      </div>
-      <p className="tiny muted">Quanto melhor o clima da conversa, mais a pessoa cede. Ofertas absurdas ofendem. Aceitar o valor dela fecha um meio-termo.</p>
+      <p className="tiny muted" style={{ marginTop: 4 }}>
+        Diga um valor para fazer a sua oferta, «aceito» para ficar com o valor na mesa, ou continue conversando. Quanto melhor o clima, mais a pessoa cede; ofertas absurdas ofendem.
+      </p>
+    </div>
+  );
+}
+
+function Hints() {
+  const { s } = useGame();
+  const e = s.encounter!;
+  const m = anyMission(s, e.missionId);
+  const c = character(m.npc);
+  const first = c.nick ?? c.name.split(" ")[0];
+  const tips: string[] = [];
+  for (const k of e.known) {
+    const n = c.needs.find((x) => x.id === k);
+    if (n) tips.push(`Você sabe que ${n.label.charAt(0).toLowerCase()}${n.label.slice(1)} Fale disso.`);
+  }
+  if (e.known.length < c.needs.length) tips.push(`Ainda há algo que pesa para ${first} e você não sabe. Pergunte o que a preocupa ou o que mais importa.`);
+  if (e.attrs.patience < 30) tips.push(`${first} está perdendo a paciência: seja direto ou faça logo a proposta.`);
+  if (e.attrs.suspicion > 55) tips.push("Há desconfiança no ar: dados concretos ou franqueza funcionam melhor que promessas.");
+  if (e.lastReaction === "offended" || e.lastReaction === "impatient") tips.push("A última fala caiu mal. Mudar de assunto ou reconhecer o erro pode salvar o clima.");
+  if (c.interests.length && e.turn >= 1) tips.push(`Assunto que aproxima: ${c.interests.map((i) => i.topic).join(", ")}.`);
+  const last = e.tactics.slice(-2);
+  if (last.length === 2 && last[0] === last[1]) tips.push("Você está repetindo a mesma abordagem: ela rende cada vez menos.");
+  if (e.turn >= 3) tips.push(m.negotiation ? "Quando quiser falar de dinheiro, diga um valor (ex.: «te pago 300»)." : "Quando sentir que é a hora, faça a proposta (ex.: «Então, fechamos?»).");
+  tips.push(`Gosta de: ${c.likes.join(", ")}. Não gosta de: ${c.dislikes.join(", ")}.`);
+  return (
+    <div className="composer-note hints">
+      {tips.slice(0, 4).map((t) => (
+        <p key={t} className="tiny">
+          <Lightbulb size={12} className="gold" /> {t}
+        </p>
+      ))}
     </div>
   );
 }

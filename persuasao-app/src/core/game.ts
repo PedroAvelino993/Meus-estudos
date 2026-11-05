@@ -5,6 +5,7 @@ import type { Mission, Outcome, Tactic } from "./types";
 import { type EncounterState, type PlayerCtx, type Relationship, acceptCounter, answerSide, choose, newRelationship, offer, rejectCounter, resultOf, startEncounter } from "./encounter";
 import { hash, rngFrom, pickOne, shuffle } from "./rng";
 import { makeGig, makeVisit } from "./generated";
+import { normalize, priceIn, saysYes, understand, understandSide, type Understood } from "./understand";
 import { CHARACTERS, DISTRICTS, ITEMS, MISSIONS, PERKS, character, district, item, mission as missionById } from "../content";
 import { CASES, CHALLENGES, CHAPTERS, ENDINGS, EVENTS, GIGS, SECURITY_TIPS, emptyDayStats, type DayStats } from "../content/story";
 
@@ -718,3 +719,52 @@ export function migrate(raw: unknown): GameState | null {
 }
 
 export const ALL_ITEMS = ITEMS;
+
+// ---------- Fala digitada ----------
+
+/** Troca a fala padrão do motor pelo que o jogador realmente escreveu. */
+function withTyped(before: GameState, after: GameState, typed: string): GameState {
+  if (!after.encounter || !before.encounter || after === before) return after;
+  const start = before.encounter.log.length;
+  const log = [...after.encounter.log];
+  const i = log.findIndex((l, k) => k >= start && l.who === "me");
+  if (i >= 0) log[i] = { ...log[i], text: typed };
+  return { ...after, encounter: { ...after.encounter, log } };
+}
+
+export interface TalkResult {
+  state: GameState;
+  understood?: Understood;
+}
+
+/** O jogador escreveu algo na conversa: entende e aplica. */
+export function talk(s0: GameState, raw: string): TalkResult {
+  const typed = raw.trim().replace(/\s+/g, " ").slice(0, 400);
+  const e = s0.encounter;
+  if (!e || e.status !== "active" || !typed) return { state: s0 };
+  const m = anyMission(s0, e.missionId);
+  const c = character(m.npc);
+  const n = m.negotiation;
+
+  if (e.pending) {
+    const idx = understandSide(typed, e.pending.options);
+    return { state: withTyped(s0, answer(s0, idx), typed) };
+  }
+
+  if (e.counter) {
+    const price = n ? priceIn(typed) : null;
+    if (n && price !== null) return { state: withTyped(s0, makeOffer(s0, price), typed) };
+    if (saysYes(typed)) return { state: withTyped(s0, takeCounter(s0), typed) };
+    return { state: withTyped(s0, refuseCounter(s0), typed) };
+  }
+
+  // Negociação: "te pago 300" já abre a conversa de valor e faz a oferta
+  const price = n ? priceIn(typed) : null;
+  if (n && price !== null && /(ofere|dou |pago|pagar|fecho|vendo|aceita|topa|por \d|quero \d|faco)/.test(normalize(typed))) {
+    const opened = say(s0, "u-close");
+    if (opened.encounter?.counter) return { state: withTyped(s0, makeOffer(opened, price), typed) };
+  }
+
+  const u = understand(typed, e, m, c, playerCtx(s0, c.id));
+  return { state: withTyped(s0, say(s0, u.optionId), typed), understood: u };
+}

@@ -250,6 +250,9 @@ function checkClaim(s: EncounterState, claim: Claim): { contradicts?: { before: 
   return {};
 }
 
+/** Abordagens possíveis numa fala livre (propor e encerrar têm caminhos próprios). */
+export const FREE_TACTICS: Tactic[] = ["explain", "evidence", "empathy", "question", "rapport", "authority", "socialProof", "urgency", "flattery", "humor", "concession", "pressure", "reframe", "honesty", "changeSubject"];
+
 const CAUGHT: Delta = { trust: -25, suspicion: 30, credibility: -20, affinity: -10, patience: -10 };
 
 export function choose(s0: EncounterState, optionId: string, m: Mission, c: Character, p: PlayerCtx): EncounterState {
@@ -259,7 +262,9 @@ export function choose(s0: EncounterState, optionId: string, m: Mission, c: Char
 
   const b = beatOf(m, s.beat);
   const scripted = b.options.find((o) => o.id === optionId);
-  const universalShown = optionsFor(s0, m, c, p).find((o) => o.id === optionId);
+  // Fala livre digitada pelo jogador: "u-free:<abordagem>"
+  const freeTactic = optionId.startsWith("u-free:") ? (optionId.slice(7) as Tactic) : null;
+  const universalShown = freeTactic && FREE_TACTICS.includes(freeTactic) ? { id: optionId, text: "", tactic: freeTactic } : optionsFor(s0, m, c, p).find((o) => o.id === optionId);
   if (!scripted && !universalShown) return s0;
   const tactic: Tactic = scripted?.tactic ?? universalShown!.tactic;
   const text = scripted ? fill(scripted.text, c, p) : universalShown!.text;

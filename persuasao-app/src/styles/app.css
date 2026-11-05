@@ -1990,3 +1990,70 @@ body.reduce-motion *::after {
     stroke-width: 5px;
   }
 }
+
+/* ---------- Caixa de mensagem da conversa ---------- */
+.composer {
+  border-top: 1px solid var(--line);
+  padding: 12px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent);
+}
+.composer-note {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  animation: bubble 0.25s ease;
+}
+.composer-note.hints {
+  border-color: rgba(201, 164, 76, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.composer-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.composer-input {
+  flex: 1;
+  min-height: 46px;
+  max-height: 140px;
+  resize: none;
+  field-sizing: content;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  outline: none;
+  line-height: 1.4;
+  font-size: 0.95rem;
+}
+.composer-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-soft);
+}
+.send-btn {
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, var(--gold-2), var(--gold));
+  color: #17130a;
+  transition: transform 0.12s ease, opacity 0.15s ease;
+}
+.send-btn:disabled {
+  opacity: 0.35;
+}
+.send-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.composer-tools .btn {
+  color: var(--muted);
+}

@@ -47,6 +47,6 @@ O código-fonte fica em `russky-app/` (React + TypeScript + Vite) e o app public
 
 ## The Art of Persuasion — jogo de estratégia social
 
-Jogo de persuasão, negociação e decisões sociais em Vila Áurea, uma cidade fictícia com 7 bairros e 30 personagens. Você ganha entendendo as pessoas: descobre o que cada uma precisa, evita contradições e decide quando fazer a proposta. Tem celular dentro do jogo (banco, contatos, mensagens, central de investigação, loja, perfil e ajustes), capítulos com quatro finais, árvore de habilidades, conquistas, bicos e desafios diários. Abre em `/persuasao/` no mesmo link do GitHub Pages.
+Jogo de persuasão, negociação e decisões sociais em Vila Áurea, uma cidade fictícia com 7 bairros e 30 personagens. Você conversa escrevendo livremente, como numa troca de mensagens, e ganha entendendo as pessoas: descobre o que cada uma precisa, evita contradições e decide quando fazer a proposta. Tem celular dentro do jogo (banco, contatos, mensagens, central de investigação, loja, perfil e ajustes), capítulos com quatro finais, árvore de habilidades, conquistas, bicos e desafios diários. Abre em `/persuasao/` no mesmo link do GitHub Pages.
 
 Toda a economia é fictícia (moeda ₢): o jogo não pede, guarda nem usa cartões, senhas ou dados bancários reais. O código-fonte fica em `persuasao-app/` (React + TypeScript + Vite) e o jogo publicado é gerado em `persuasao/`. Detalhes em `persuasao-app/README.md`.
