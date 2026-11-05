@@ -2057,3 +2057,29 @@ body.reduce-motion *::after {
 .composer-tools .btn {
   color: var(--muted);
 }
+
+/* ---------- Saída do celular ---------- */
+.phone-x {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  background: var(--panel-2);
+  color: var(--text);
+}
+.phone-dock {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding: 8px 16px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--pbg);
+}
+.phone-dock .btn {
+  flex: 1;
+  max-width: 200px;
+}

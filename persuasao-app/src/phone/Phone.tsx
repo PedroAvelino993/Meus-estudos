@@ -1,7 +1,7 @@
 // O celular do jogo: moldura, tela inicial e navegação entre os aplicativos.
 
-import { useEffect } from "react";
-import { ArrowLeft, BatteryMedium, Contact, Landmark, MessageCircle, Settings, ShieldAlert, ShoppingBag, Signal, User, Wifi } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { ArrowLeft, BatteryMedium, House, X, Contact, Landmark, MessageCircle, Settings, ShieldAlert, ShoppingBag, Signal, User, Wifi } from "lucide-react";
 import { item } from "../content";
 import { clock, unread } from "../core/game";
 import { useGame } from "../ui";
@@ -33,11 +33,24 @@ export function PhoneHeader({ title, back }: { title: string; back: () => void }
 export default function Phone({ app, setApp, onClose }: { app: string; setApp: (a: string) => void; onClose: () => void }) {
   const { s } = useGame();
   const theme = item(s.theme)?.theme ?? { accent: "#C9A44C", bg: "#0E1117" };
+  // O botão/gesto "voltar" do celular ou do navegador também guarda o celular do jogo
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    history.pushState({ phone: true }, "");
+    const pop = () => closeRef.current();
+    window.addEventListener("popstate", pop);
+    return () => window.removeEventListener("popstate", pop);
+  }, []);
+  const close = () => {
+    if ((history.state as { phone?: boolean } | null)?.phone) history.back();
+    else onClose();
+  };
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === "Escape" && close();
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
+  });
   const home = () => setApp("home");
   const badges: Record<string, number> = {
     mensagens: unread(s),
@@ -45,7 +58,7 @@ export default function Phone({ app, setApp, onClose }: { app: string; setApp: (
     perfil: Math.max(0, perkPoints(s)),
   };
   return (
-    <div className="phone-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="phone-overlay" onClick={(e) => e.target === e.currentTarget && close()}>
       <div className="phone" style={{ ["--accent" as string]: theme.accent, ["--pbg" as string]: theme.bg }} role="dialog" aria-modal="true" aria-label="Celular">
         <div className="phone-status">
           <span>{clock(s.minute)}</span>
@@ -53,6 +66,9 @@ export default function Phone({ app, setApp, onClose }: { app: string; setApp: (
             <Signal size={13} />
             <Wifi size={13} />
             <BatteryMedium size={15} /> {s.energy}%
+            <button className="phone-x" onClick={close} aria-label="Fechar o celular e voltar ao jogo" title="Voltar ao jogo">
+              <X size={16} />
+            </button>
           </span>
         </div>
         <div className="phone-body">
@@ -86,8 +102,15 @@ export default function Phone({ app, setApp, onClose }: { app: string; setApp: (
           {app === "perfil" && <Profile back={home} />}
           {app === "ajustes" && <SettingsApp back={home} />}
         </div>
-        <div className="phone-home-bar">
-          <button onClick={app === "home" ? onClose : home} aria-label={app === "home" ? "Guardar o celular" : "Tela inicial"} />
+        <div className="phone-dock">
+          {app !== "home" && (
+            <button className="btn sm" onClick={home}>
+              <House size={15} /> Apps
+            </button>
+          )}
+          <button className="btn sm primary" onClick={close}>
+            <X size={15} /> Voltar ao jogo
+          </button>
         </div>
       </div>
     </div>
