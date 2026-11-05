@@ -8,7 +8,8 @@ import { character, district } from "../content";
 import { optionsFor, persuasionScore, resultOf, type LogEntry } from "../core/encounter";
 import { understand } from "../core/understand";
 import { anyMission, collapseNpcLines, finishEncounter, heatFactor, leaveEncounter, playerCtx, setLogText, talk } from "../core/game";
-import { aiActive, loadAi, npcReply } from "../ai";
+import { aiActive, loadAi, npcReply, saveAi, type AiSettings } from "../ai";
+import { LOCAL_MODELS, hasWebGPU, loadLocal } from "../local-llm";
 import { moodFace, tellsOf } from "../core/persona";
 import { ATTRS, ATTR_LABEL, LOOT_LABEL, OUTCOME_LABEL, TACTIC_LABEL, type Attr, type Attrs } from "../core/types";
 import { Bar, Money, fmt, sfx, useGame } from "../ui";
@@ -82,12 +83,12 @@ export default function Encounter() {
   }, [busy, e.status]);
 
   // Falas geradas na hora pela IA (se o jogador configurou a chave em Ajustes)
-  const [ai] = useState(loadAi);
+  const [ai, setAi] = useState(loadAi);
   const [aiBroken, setAiBroken] = useState(false);
   const aiOn = aiActive(ai) && !aiBroken;
   const openedRef = useRef(false);
 
-  const voice = async (from: number, typed: string | null, opening: boolean) => {
+  const voice = async (from: number, typed: string | null, opening: boolean, free?: { answer: string | null }) => {
     let info = { index: -1, lines: [] as string[] };
     let snapshot = s;
     act((g) => {
@@ -109,7 +110,7 @@ export default function Encounter() {
         mission: m,
         history: opening ? [] : enc.log.slice(0, typed ? from : from),
         typed,
-        direction: { reaction: lastNpc?.reaction ?? "neutral", lines: info.lines, attrs: enc.attrs, outcome: enc.outcome, done: enc.status === "done", question: enc.pending?.kind === "probe", opening },
+        direction: { reaction: lastNpc?.reaction ?? "neutral", lines: free ? (free.answer ? [free.answer] : []) : info.lines, free: !!free, attrs: enc.attrs, outcome: enc.outcome, done: enc.status === "done", question: enc.pending?.kind === "probe", opening },
         onText: (t) => setAiLive({ index, text: t }),
         onStatus: setAiStatus,
       });
@@ -138,12 +139,14 @@ export default function Encounter() {
     const before = s.encounter!;
     const from = before.log.length;
     let after = before;
+    let free: { answer: string | null } | undefined;
     act((g) => {
       const r = talk(g, text);
       after = r.state.encounter ?? before;
+      free = r.free;
       return r.state;
     });
-    if (aiOn && after !== before) void voice(from, text, false);
+    if (aiOn && after !== before) void voice(from, text, false, free);
     setDraft("");
     if (s.stats.conversations >= 3) setHint(false);
     if (after.liesCaught > before.liesCaught) {
@@ -289,6 +292,7 @@ export default function Encounter() {
               </div>
             )}
             {e.counter && <CounterInfo />}
+            {!aiOn && <AiOffer onReady={(n) => setAi(n)} />}
             {hint && <Hints />}
             {preview && (
               <div className="row wrap composer-note tiny">
@@ -533,6 +537,81 @@ function MissionBar() {
       <p className="tiny gold" style={{ marginTop: 5 }}>
         {step}
       </p>
+    </div>
+  );
+}
+
+/** Convite para ligar a IA grátis do aparelho, dentro da própria conversa. */
+function AiOffer({ onReady }: { onReady: (a: AiSettings) => void }) {
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return sessionStorage.getItem("persuasao:ai-offer") === "no";
+    } catch {
+      return false;
+    }
+  });
+  const [progress, setProgress] = useState<number | null>(null);
+  const [msg, setMsg] = useState("");
+  if (hidden) return null;
+  const a = loadAi();
+  if (a.provider === "claude" && a.apiKey) return null;
+  const model = LOCAL_MODELS.find((m) => m.id === a.localModel) ?? LOCAL_MODELS[1];
+  if (!hasWebGPU())
+    return (
+      <div className="composer-note tiny muted">
+        Para os personagens responderem qualquer pergunta, dá para ligar uma IA grátis — mas este navegador não tem WebGPU. Abra o jogo no Chrome ou no Edge atualizados (no iPhone, iOS 26 ou mais novo).
+      </div>
+    );
+  return (
+    <div className="composer-note ai-offer">
+      <div className="small">
+        <b>Quer que respondam qualquer pergunta?</b> Ligue a IA grátis, que roda no seu aparelho: sem pagar, sem cadastro. Baixa uma vez ({model.size}, melhor no Wi-Fi).
+      </div>
+      {progress !== null ? (
+        <div style={{ marginTop: 6 }}>
+          <Bar value={progress * 100} tone="green" label="Baixando a IA" />
+          <div className="tiny muted" style={{ marginTop: 3 }}>
+            {msg || "Baixando…"}
+          </div>
+        </div>
+      ) : (
+        <div className="row wrap" style={{ marginTop: 6 }}>
+          <button
+            className="btn sm green"
+            onClick={async () => {
+              setProgress(0);
+              try {
+                await loadLocal(model.id, (p, t) => {
+                  setProgress(p);
+                  setMsg(`${Math.round(p * 100)}% · ${t.slice(0, 60)}`);
+                });
+                const n: AiSettings = { ...a, provider: "local", localModel: model.id, localReady: true, enabled: true };
+                saveAi(n);
+                onReady(n);
+              } catch (err) {
+                setProgress(null);
+                setMsg(`Não deu certo: ${err instanceof Error ? err.message.slice(0, 120) : "erro"}. Tente o modelo «Mínimo» em Celular → Ajustes.`);
+              }
+            }}
+          >
+            Ligar IA grátis
+          </button>
+          <button
+            className="btn sm ghost"
+            onClick={() => {
+              try {
+                sessionStorage.setItem("persuasao:ai-offer", "no");
+              } catch {
+                /* ok */
+              }
+              setHidden(true);
+            }}
+          >
+            Agora não
+          </button>
+          {msg && <span className="tiny red">{msg}</span>}
+        </div>
+      )}
     </div>
   );
 }

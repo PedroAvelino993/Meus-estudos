@@ -4,10 +4,20 @@
 import type { MLCEngineInterface, InitProgressReport } from "@mlc-ai/web-llm";
 
 export const LOCAL_MODELS = [
+  { id: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC", name: "Mínimo", size: "≈ 0,5 GB", note: "para celulares fracos: responde, mas bem simples" },
   { id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", name: "Leve", size: "≈ 1 GB", note: "para celulares e computadores simples" },
   { id: "Qwen2.5-3B-Instruct-q4f16_1-MLC", name: "Equilibrado", size: "≈ 2 GB", note: "recomendado: escreve melhor" },
   { id: "Qwen2.5-7B-Instruct-q4f16_1-MLC", name: "Caprichado", size: "≈ 5 GB", note: "só para computadores com placa de vídeo boa" },
 ] as const;
+
+/** Modelo sugerido para este aparelho: celular fica com o Leve; computador, com o Equilibrado. */
+export function suggestedLocalModel(): string {
+  const mobile = typeof navigator !== "undefined" && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+  const mem = (typeof navigator !== "undefined" && (navigator as { deviceMemory?: number }).deviceMemory) || 8;
+  if (mobile && mem <= 4) return LOCAL_MODELS[0].id;
+  if (mobile) return LOCAL_MODELS[1].id;
+  return LOCAL_MODELS[2].id;
+}
 
 export interface LocalMessage {
   role: "system" | "user" | "assistant";

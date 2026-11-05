@@ -842,6 +842,8 @@ function withTyped(before: GameState, after: GameState, typed: string): GameStat
 export interface TalkResult {
   state: GameState;
   understood?: Understood;
+  /** Fala livre (fora do roteiro): a resposta pronta de conversa fiada, se houver. */
+  free?: { answer: string | null };
 }
 
 /** O jogador escreveu algo na conversa: entende e aplica. */
@@ -874,6 +876,7 @@ export function talk(s0: GameState, raw: string): TalkResult {
 
   const u = understand(typed, e, m, c, playerCtx(s0, c.id));
   let next = withTyped(s0, say(s0, u.optionId), typed);
+  let free: TalkResult["free"];
   // Fala livre: responder ao que foi perguntado e não deixar a conversa morrer em "Sei."
   if (u.optionId.startsWith("u-free:") && next.encounter && next.encounter.status === "active") {
     const enc = next.encounter;
@@ -881,8 +884,9 @@ export function talk(s0: GameState, raw: string): TalkResult {
     const i = enc.log.findIndex((l, k) => k >= from && l.who === "npc");
     if (i >= 0) {
       const answer = smallTalkAnswer(typed, c, e);
+      free = { answer };
       const generic = enc.log[i].text;
-      const negative = ["offended", "impatient", "skeptical"].includes(enc.log[i].reaction ?? "");
+      const negative = enc.log[i].reaction === "offended";
       let text = generic;
       if (answer) text = negative && !answer.startsWith("Desculpa") ? `${generic} ${answer}` : answer;
       else if (isBland(generic)) text = `${generic} ${enc.turn % 3 === 0 ? offTopic(c) ?? "" : ""}`.trim();
@@ -898,7 +902,7 @@ export function talk(s0: GameState, raw: string): TalkResult {
       next = { ...next, encounter: { ...enc, log, attrs } };
     }
   }
-  return { state: next, understood: u };
+  return { state: next, understood: u, free };
 }
 
 // ---------- Falas geradas pela IA ----------

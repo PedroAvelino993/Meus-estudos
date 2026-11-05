@@ -8,7 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Character, Mission, Reaction } from "./core/types";
 import type { EncounterState, LogEntry } from "./core/encounter";
 import { OUTCOME_LABEL } from "./core/types";
-import { LOCAL_MODELS, hasWebGPU, localComplete, type LocalMessage } from "./local-llm";
+import { LOCAL_MODELS, hasWebGPU, localComplete, suggestedLocalModel, type LocalMessage } from "./local-llm";
 
 export const AI_MODELS = [
   { id: "claude-opus-5-5", name: "Claude Opus 5.5", note: "melhor escrita (padrão)" },
@@ -30,7 +30,7 @@ export interface AiSettings {
 const KEY = "persuasao:ai";
 
 export function loadAi(): AiSettings {
-  const base: AiSettings = { provider: "local", apiKey: "", model: "claude-opus-5-5", localModel: LOCAL_MODELS[1].id, localReady: false, enabled: true };
+  const base: AiSettings = { provider: "local", apiKey: "", model: "claude-opus-5-5", localModel: suggestedLocalModel(), localReady: false, enabled: true };
   try {
     return { ...base, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
   } catch {
@@ -150,6 +150,8 @@ export interface Direction {
   done: boolean;
   question: boolean;
   opening: boolean;
+  /** O jogador falou algo fora do roteiro (pergunta ou comentário livre). */
+  free?: boolean;
 }
 
 function directionText(d: Direction, first: string): string {
@@ -157,7 +159,9 @@ function directionText(d: Direction, first: string): string {
   const parts = [
     d.opening ? `Direção do jogo: esta é a sua primeira fala. ${first} acabou de ser abordado(a).` : `Direção do jogo para a próxima fala de ${first}: ${REACTION_TEXT[d.reaction]}.`,
     `Estado de ${first} agora (0 a 100): confiança ${a.trust}, interesse ${a.interest}, paciência ${a.patience}, desconfiança ${a.suspicion}, humor ${a.mood}, simpatia pelo jogador ${a.affinity}.`,
-    `Transmita, com as suas palavras e reagindo ao que o jogador acabou de dizer (não copie as frases):\n${d.lines.map((l) => `- ${l}`).join("\n")}`,
+    d.free
+      ? `O jogador fez uma pergunta ou comentário livre. Responda EXATAMENTE ao que ele perguntou ou disse, de forma direta, concreta e natural, como uma pessoa normal responderia. Não mude de assunto, não fale do negócio dele a menos que ele pergunte, e não responda só «Sei» ou «Ah, é?».${d.lines.length ? ` Se ajudar, use este fato sobre você: ${d.lines.join(" ")}` : ""}`
+      : `Transmita, com as suas palavras e reagindo ao que o jogador acabou de dizer (não copie as frases):\n${d.lines.map((l) => `- ${l}`).join("\n")}`,
   ];
   if (d.question) parts.push("Termine a fala com essa pergunta, do seu jeito.");
   if (d.done) parts.push(`A conversa termina nesta fala (${OUTCOME_LABEL[d.outcome ?? "left"]}). Despeça-se de acordo.`);
@@ -252,6 +256,8 @@ async function localReply(opts: Parameters<typeof npcReply>[0]): Promise<string>
   const last = opts.typed ?? "(Uma pessoa que você não conhece se aproxima e puxa conversa.)";
   if (messages[messages.length - 1].role === "user") messages[messages.length - 1] = { role: "user", content: `${messages[messages.length - 1].content}\n${last}` };
   else messages.push({ role: "user", content: last });
+  // Modelos pequenos se perdem: lembra no fim o que fazer com a fala do jogador
+  if (opts.direction.free && opts.typed) messages[messages.length - 1] = { role: "user", content: `${messages[messages.length - 1].content}\n\n(Responda a isso como ${first}, direto ao ponto, em 1 ou 2 frases.)` };
   try {
     const raw = await localComplete(settings.localModel, messages, (t) => opts.onText(cleanReply(t, c)), opts.onStatus);
     const text = cleanReply(raw, c);

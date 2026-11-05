@@ -4,7 +4,8 @@
 import type { Character, Mission } from "./types";
 import type { EncounterState } from "./encounter";
 import { TALK } from "../content/talk";
-import { normalize } from "./understand";
+import { normalize, stems } from "./understand";
+import { CHARACTERS } from "../content";
 
 const pick = <T,>(arr: T[], seed: number) => arr[Math.abs(seed) % arr.length];
 
@@ -33,6 +34,30 @@ export function smallTalkAnswer(raw: string, c: Character, e: EncounterState): s
   if (/ (novidade|novidades|o que ha de novo|quais as novas|alguma noticia|o que (tem|ta|esta) acontecendo|que (que )?ta rolando) /.test(t)) return pick(talk.novidade, e.turn + raw.length);
   if (/ (tudo bem|tudo bom|tudo certo|como vai|como (voce|vc|o senhor|a senhora) (esta|ta|vai)|como esta|beleza|td bem|como anda|como (foi|ta) (o|seu) dia) /.test(t)) return pick(talk.comoVai, e.turn + raw.length);
   if (!asks) return null;
+
+  // "Você gosta de futebol?" — responde conforme os gostos da pessoa
+  const g = t.match(/ (?:voce|vc|o senhor|a senhora|tu)? ?(?:gosta|curte|gostas) (?:muito )?(?:de |do |da |dos |das |)(.+?) $/);
+  if (g && !/^(que|quem|mim|voce|vc)\b/.test(g[1].trim())) {
+    const topic = g[1].trim();
+    const ts = stems(topic);
+    const hit = (list: string[]) => list.some((x) => stems(x).some((a) => ts.some((b) => a === b || (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a))))));
+    const interest = c.interests.find((i) => hit([i.topic, i.line]));
+    if (interest) return `${pick(["Se eu gosto? Muito!", "Gosto, e como!", "Ah, gosto sim."], raw.length)} ${interest.reply}`;
+    if (hit(c.likes)) return `${pick(["Gosto, sim.", "Gosto muito!", "Ô, se gosto."], raw.length)} ${talk.gosta}`;
+    if (hit(c.dislikes) || hit(c.limits)) return `${pick(["Não, não gosto nem um pouco.", "Detesto, para falar a verdade.", "Nada. Não suporto."], raw.length)}`;
+    const hates = [...c.bio.matchAll(/(?:odeia|detesta|despreza|não suporta) ([^.,;]+)/gi)].map((x) => x[1]);
+    if (hates.length && hit(hates)) return pick(["Odeio, para falar a verdade.", "Detesto. Não tenho paciência para isso."], raw.length);
+    return `${pick(["Mais ou menos.", "Não sou muito disso, não.", "Nunca parei para pensar nisso."], raw.length)} ${talk.gosta}`;
+  }
+
+  // "Você conhece a Dona Cida?" — fala de outros moradores da cidade
+  const k = t.match(/ (?:voce|vc|o senhor|a senhora)? ?conhece (?:o |a |os |as |seu |dona |dr |doutor |professor )?(.+?) $/);
+  if (k) {
+    const who = stems(k[1]);
+    const other = CHARACTERS.find((x) => x.id !== c.id && stems(`${x.name} ${x.nick ?? ""}`).some((a) => who.includes(a)));
+    if (other) return other.district === c.district ? `Conheço, claro. ${other.nick ?? other.name.split(" ")[0]} é ${other.role.toLowerCase()} aqui perto. Todo mundo conhece.` : `De nome. Dizem que é ${other.role.toLowerCase()} lá em ${other.district === "paco" ? "Paço Municipal" : "outro bairro"}.`;
+    return "Acho que não. Devia?";
+  }
   if (/ (trabalha|trabalho|profiss|o que (voce|vc|o senhor|a senhora) faz|emprego|servico|ganha a vida) /.test(t)) return talk.trabalho;
   if (/ (filho|filhos|filha|familia|marido|esposa|mulher|neto|neta|casad|seus pais|sua mae|seu pai|mora com quem) /.test(t)) return talk.familia;
   if (/ (dinheiro|salario|grana|financ|as contas|aperto|ganha bem|ta dificil) /.test(t)) return e.attrs.trust < 30 ? "Isso é assunto meu. Não abro a minha vida para quem acabei de conhecer." : talk.dinheiro;

@@ -1,6 +1,6 @@
 // Modo offline do The Art of Persuasion: rede primeiro (sempre a versão mais nova), cópia guardada quando offline.
 // "no-cache" faz o navegador conferir com o site, para nunca misturar arquivos de versões diferentes.
-const CACHE = "persuasao-v7";
+const CACHE = "persuasao-v8";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "./index.html", "./manifest.webmanifest", "./icon.svg"].map((u) => new Request(u, { cache: "reload" })))));

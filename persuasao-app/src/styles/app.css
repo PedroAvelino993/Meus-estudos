@@ -2094,3 +2094,7 @@ body.reduce-motion *::after {
   border-color: rgba(63, 191, 138, 0.55);
   background: linear-gradient(135deg, rgba(63, 191, 138, 0.12), transparent 60%), var(--panel);
 }
+.composer-note.ai-offer {
+  border-color: rgba(63, 191, 138, 0.55);
+  background: var(--green-soft);
+}
