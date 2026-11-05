@@ -6,6 +6,7 @@ import { type EncounterState, type PlayerCtx, type Relationship, acceptCounter, 
 import { hash, rngFrom, pickOne, shuffle } from "./rng";
 import { makeGig, makeVisit } from "./generated";
 import { normalize, priceIn, saysYes, understand, understandSide, type Understood } from "./understand";
+import { isBland, offTopic, smallTalkAnswer, steerLine } from "./smalltalk";
 import { CHARACTERS, DISTRICTS, ITEMS, MISSIONS, PERKS, character, district, item, mission as missionById } from "../content";
 import { CHALLENGES, CHAPTERS, ENDINGS, EVENTS, GIGS, POLICE_ALERTS, emptyDayStats, type DayStats } from "../content/story";
 
@@ -872,7 +873,32 @@ export function talk(s0: GameState, raw: string): TalkResult {
   }
 
   const u = understand(typed, e, m, c, playerCtx(s0, c.id));
-  return { state: withTyped(s0, say(s0, u.optionId), typed), understood: u };
+  let next = withTyped(s0, say(s0, u.optionId), typed);
+  // Fala livre: responder ao que foi perguntado e não deixar a conversa morrer em "Sei."
+  if (u.optionId.startsWith("u-free:") && next.encounter && next.encounter.status === "active") {
+    const enc = next.encounter;
+    const from = e.log.length;
+    const i = enc.log.findIndex((l, k) => k >= from && l.who === "npc");
+    if (i >= 0) {
+      const answer = smallTalkAnswer(typed, c, e);
+      const generic = enc.log[i].text;
+      const negative = ["offended", "impatient", "skeptical"].includes(enc.log[i].reaction ?? "");
+      let text = generic;
+      if (answer) text = negative && !answer.startsWith("Desculpa") ? `${generic} ${answer}` : answer;
+      else if (isBland(generic)) text = `${generic} ${enc.turn % 3 === 0 ? offTopic(c) ?? "" : ""}`.trim();
+      // Puxa de volta para o assunto (a pergunta da etapa atual), sem repetir a mesma frase
+      const steer = steerLine(m, enc);
+      const alreadySaid = enc.log.slice(Math.max(0, i - 6), i).some((l) => l.text.includes(steer));
+      const lead = ["Mas, voltando ao assunto: ", "Enfim. ", "Mas me diz uma coisa: ", "Bom, e sobre o que você veio falar? "][enc.turn % 4];
+      if (!alreadySaid && !text.endsWith("?") && !enc.pending) text = `${text} ${lead}${lead.endsWith("? ") ? "" : `${steer.charAt(0).toUpperCase()}${steer.slice(1)}`}`.trim();
+      const log = [...enc.log];
+      log[i] = { ...log[i], text };
+      // Uma troca de verdade (pergunta respondida) cansa menos e aproxima um pouco
+      const attrs = answer ? { ...enc.attrs, patience: Math.min(100, enc.attrs.patience + 5), affinity: Math.min(100, enc.attrs.affinity + 2) } : enc.attrs;
+      next = { ...next, encounter: { ...enc, log, attrs } };
+    }
+  }
+  return { state: next, understood: u };
 }
 
 // ---------- Falas geradas pela IA ----------

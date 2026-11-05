@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { BookOpen, Check, DoorOpen, Eye, Gauge, HandCoins, Lightbulb, MessageCircleQuestion, NotebookPen, SendHorizontal, Sparkles, TriangleAlert, X } from "lucide-react";
 import Portrait from "../components/Portrait";
 import { character, district } from "../content";
-import { persuasionScore, resultOf, type LogEntry } from "../core/encounter";
+import { optionsFor, persuasionScore, resultOf, type LogEntry } from "../core/encounter";
 import { understand } from "../core/understand";
 import { anyMission, collapseNpcLines, finishEncounter, heatFactor, leaveEncounter, playerCtx, setLogText, talk } from "../core/game";
 import { aiActive, loadAi, npcReply } from "../ai";
@@ -74,7 +74,7 @@ export default function Encounter() {
   const score = persuasionScore(e.attrs);
 
   const [draft, setDraft] = useState("");
-  const [hint, setHint] = useState(false);
+  const [hint, setHint] = useState(() => s.stats.conversations < 3);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const preview = draft.trim().length > 3 && !e.pending && !e.counter ? understand(draft, e, m, c, ctx) : null;
   useEffect(() => {
@@ -145,7 +145,7 @@ export default function Encounter() {
     });
     if (aiOn && after !== before) void voice(from, text, false);
     setDraft("");
-    setHint(false);
+    if (s.stats.conversations >= 3) setHint(false);
     if (after.liesCaught > before.liesCaught) {
       sfx("bad", prefs.sound);
       toast({ text: `${c.name.split(" ")[0]} percebeu uma contradição.`, tone: "red", icon: TriangleAlert });
@@ -257,7 +257,8 @@ export default function Encounter() {
         </div>
       </aside>
 
-      <section className="card" ref={sectionRef} style={{ padding: 0, overflow: "hidden", scrollMarginTop: 64 }}>
+      <section className="card" ref={sectionRef} style={{ padding: 0, overflow: "hidden", scrollMarginTop: 120 }}>
+        <MissionBar />
         <div className="chat" ref={chatRef} aria-live="polite">
           {visibleLog.map((l: LogEntry, i) =>
             aiLive && aiLive.index === i && !aiLive.text ? null : (
@@ -388,6 +389,13 @@ function Hints() {
   const c = character(m.npc);
   const first = c.nick ?? c.name.split(" ")[0];
   const tips: string[] = [];
+  // Ideias concretas: o que dá para dizer nesta etapa (sem botões; você escreve do seu jeito)
+  const ctx = playerCtx(s, c.id);
+  const ideas = optionsFor(e, m, c, ctx)
+    .filter((o) => !o.universal && !o.bluff && !o.contradicts && !["pressure", "urgency"].includes(o.tactic))
+    .sort((a, b) => Number(!!b.insight) - Number(!!a.insight))
+    .slice(0, 2);
+  for (const o of ideas) tips.push(`Ideia: ${o.text.charAt(0).toLowerCase()}${o.text.slice(1)}.`);
   for (const k of e.known) {
     const n = c.needs.find((x) => x.id === k);
     if (n) tips.push(`Você sabe que ${n.label.charAt(0).toLowerCase()}${n.label.slice(1)} Fale disso.`);
@@ -403,7 +411,7 @@ function Hints() {
   tips.push(`Gosta de: ${c.likes.join(", ")}. Não gosta de: ${c.dislikes.join(", ")}.`);
   return (
     <div className="composer-note hints">
-      {tips.slice(0, 4).map((t) => (
+      {tips.slice(0, 5).map((t) => (
         <p key={t} className="tiny">
           <Lightbulb size={12} className="gold" /> {t}
         </p>
@@ -475,6 +483,56 @@ function ResultBox() {
       <button className="btn primary block" style={{ marginTop: 10 }} onClick={() => act((g) => finishEncounter(g))}>
         Continuar
       </button>
+    </div>
+  );
+}
+
+/** Barra fixa no topo da conversa: objetivo, quanto a vítima está convencida e o próximo passo. */
+function MissionBar() {
+  const { s } = useGame();
+  const e = s.encounter!;
+  const m = anyMission(s, e.missionId);
+  const c = character(m.npc);
+  const first = c.nick ?? c.name.split(" ")[0];
+  const T = m.threshold - (s.perks.includes("fechador") ? 6 : 0);
+  const score = persuasionScore(e.attrs);
+  const pct = Math.max(0, Math.min(100, ((score - (T - 30)) / 30) * 100));
+  const ready = score >= T;
+  const almost = score >= T - 10;
+  const isVisit = m.id.startsWith("visit:");
+  const step = isVisit
+    ? `Converse sobre a vida de ${first}. Quando quiser, despeça-se.`
+    : e.known.length === 0
+      ? `Passo 1: converse e descubra o ponto fraco de ${first} (pergunte o que preocupa ou o que mais importa).`
+      : ready
+        ? `${first} está no ponto. Dê o bote agora: escreva algo como ${m.negotiation ? "«te pago 300»" : "«Então, fechamos?»"}.`
+        : almost
+          ? `Quase lá. Mais uma fala certeira sobre o que você descobriu e dê o bote.`
+          : `Passo 2: use o que você descobriu sobre ${first} para convencer. A barra precisa ficar verde.`;
+  return (
+    <div className="mission-bar">
+      <div className="row between small">
+        <b className="grow" style={{ minWidth: 0 }}>
+          🎯 {m.objective}
+        </b>
+      </div>
+      {!isVisit && (
+        <div className="row" style={{ marginTop: 6 }}>
+          <span className="tiny muted" style={{ whiteSpace: "nowrap" }}>
+            Convencimento
+          </span>
+          <div className="grow">
+            <Bar value={pct} tone={ready ? "green" : almost ? undefined : "red"} label="Convencimento" />
+          </div>
+          <span className={`tiny ${ready ? "green" : "muted"}`}>{ready ? "pronto!" : `${Math.round(pct)}%`}</span>
+          <span className="chip" title="Pontos fracos descobertos">
+            {e.known.length}/{c.needs.length} pontos fracos
+          </span>
+        </div>
+      )}
+      <p className="tiny gold" style={{ marginTop: 5 }}>
+        {step}
+      </p>
     </div>
   );
 }

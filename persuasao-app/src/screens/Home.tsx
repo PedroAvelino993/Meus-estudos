@@ -5,7 +5,7 @@ import Portrait from "../components/Portrait";
 import { MISSIONS, character, district, item } from "../content";
 import { heatLabel } from "../phone/apps2";
 import { EVENTS } from "../content/story";
-import { DAY_END, RENT, availableHere, challengesToday, chapterGoal, claimChallenge, clock, gigsHere, levelOf, missionAvailable, missionDone, districtUnlocked } from "../core/game";
+import { DAY_END, RENT, availableHere, challengesToday, chapterGoal, claimChallenge, clock, fareTo, gigsHere, levelOf, missionAvailable, missionDone, missionLock, districtUnlocked, travel } from "../core/game";
 import type { GameState } from "../core/game";
 import type { Look } from "../core/types";
 import { Bar, Difficulty, Money, PLAYER_LOOKS, fmt, useGame } from "../ui";
@@ -58,6 +58,8 @@ export default function Home({ onEndDay }: { onEndDay: () => void }) {
           </div>
         </div>
       </div>
+
+      <NextStep />
 
       <div className="stat-row">
         <div className="stat">
@@ -304,6 +306,92 @@ export default function Home({ onEndDay }: { onEndDay: () => void }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** O que fazer agora, em uma frase e um botão. */
+function NextStep() {
+  const { s, act, go, brief, openPhone, toast } = useGame();
+  const goal = chapterGoal(s);
+  const ch = goal.chapter;
+  let title = "";
+  let detail = "";
+  let action: { label: string; run: () => void } | null = null;
+
+  const pendingStory = ch.goal.story.map((id) => MISSIONS.find((m) => m.id === id)!).find((m) => !missionDone(s, m.id));
+  const pendingAny = ch.goal.anyOf && goal.any < goal.anyNeeded ? MISSIONS.filter((m) => ch.goal.anyOf!.missions.includes(m.id) && !missionDone(s, m.id)) : [];
+  const missingItem = (ch.goal.items ?? []).find((i) => !s.items.includes(i));
+  const candidates = [pendingStory, ...pendingAny].filter(Boolean) as typeof MISSIONS;
+  const ready = candidates.find((m) => missionAvailable(s, m) && districtUnlocked(s, m.district));
+
+  const goTo = (m: (typeof MISSIONS)[number]) => () => {
+    if (s.location !== m.district) {
+      const after = act((g) => travel(g, m.district));
+      if (after.location !== m.district) {
+        toast({ text: `Não deu para ir até ${district(m.district).name} agora (passagem ou horário).`, tone: "red" });
+        return;
+      }
+    }
+    go("district");
+    brief(m.id);
+  };
+
+  if (s.ending) {
+    title = "A história acabou — mas a cidade continua.";
+    detail = "Aplique golpes rápidos e termine os alvos que ficaram para trás.";
+  } else if (s.energy < 15 || s.minute >= DAY_END - 30) {
+    title = "Hora de dormir.";
+    detail = "Sem energia (ou tarde demais) para conversar. Durma para começar um novo dia.";
+  } else if (ready) {
+    const c = character(ready.npc);
+    title = `Aplique o golpe «${ready.title}» em ${c.name.split(" ")[0]}.`;
+    detail = `${ready.objective} ${s.location === ready.district ? `Você já está em ${district(ready.district).name}.` : `Fica em ${district(ready.district).name} (passagem ${fmt(fareTo(s, ready.district))}).`}`;
+    action = { label: s.location === ready.district ? "Falar agora" : `Ir para ${district(ready.district).name}`, run: goTo(ready) };
+  } else if (missingItem) {
+    const it = item(missingItem)!;
+    title = `Compre: ${it.name} (${fmt(it.price)}).`;
+    detail = s.money >= it.price ? "Abra o celular → Mercado → Ferramentas." : `Você tem ${fmt(s.money)}. Junte o resto com golpes rápidos ou vendendo o butim (celular → Central).`;
+    action = s.money >= it.price ? { label: "Abrir o Mercado", run: () => openPhone("loja") } : { label: "Ver golpes rápidos", run: () => go("district") };
+  } else if (ch.goal.money && s.money < ch.goal.money) {
+    title = `Junte ${fmt(ch.goal.money)} (você tem ${fmt(s.money)}).`;
+    detail = s.loot.length ? "Você tem butim parado: venda na Central do celular." : "Faça golpes rápidos no bairro: aparecem novos todo dia.";
+    action = s.loot.length ? { label: "Vender o butim", run: () => openPhone("investigacao") } : { label: "Ver golpes rápidos", run: () => go("district") };
+  } else if (candidates.length) {
+    const m = candidates[0];
+    const lock = missionLock(s, m);
+    title = `Próximo alvo: ${character(m.npc).name.split(" ")[0]} (${district(m.district).name}).`;
+    detail = lock.reason === "Tente de novo amanhã" ? "Não deu certo hoje. Durma e tente de novo amanhã, ou faça golpes rápidos." : `Ainda bloqueado: ${lock.reason ?? (districtUnlocked(s, m.district) ? "" : "bairro fechado")}.`;
+  } else {
+    title = "Objetivo do capítulo quase completo.";
+    detail = ch.goalText;
+  }
+  return (
+    <div className="card next-step">
+      <div className="eyebrow">Próximo passo</div>
+      <h2 style={{ fontSize: "1.15rem", marginTop: 4 }}>{title}</h2>
+      <p className="small muted" style={{ marginTop: 4 }}>
+        {detail}
+      </p>
+      {action && (
+        <button className="btn primary" style={{ marginTop: 10 }} onClick={action.run}>
+          {action.label} <ChevronRight size={16} />
+        </button>
+      )}
+      {s.stats.conversations < 2 && (
+        <details style={{ marginTop: 10 }}>
+          <summary className="small gold" style={{ cursor: "pointer" }}>
+            Como jogar (30 segundos)
+          </summary>
+          <ol className="small muted" style={{ margin: "6px 0 0", paddingLeft: 20 }}>
+            <li>Escolha um alvo e entre na conversa.</li>
+            <li>Escreva como numa conversa normal. Pergunte, puxe assunto, descubra o ponto fraco da pessoa.</li>
+            <li>Use o que descobriu para convencer. A barra «Convencimento» no topo da conversa mostra o quanto ela está no ponto.</li>
+            <li>Quando a barra ficar verde, dê o bote: «Então, fechamos?».</li>
+            <li>Cuidado com contradições: se ela perceber, o calor da polícia sobe.</li>
+          </ol>
+        </details>
+      )}
     </div>
   );
 }

@@ -97,3 +97,23 @@ describe("conversa digitada no jogo", () => {
     expect(talk(s, "   ").state).toBe(s);
   });
 });
+
+describe("conversa fiada responde de verdade", () => {
+  it("novidade, como vai, família e «como assim?» têm resposta própria, e a conversa volta ao assunto", async () => {
+    const { newGame, startMission, talk } = await import("../core/game");
+    let s = startMission(newGame("Alex", 0, 9), "m-jorge");
+    const said = (t: string) => {
+      const n = s.encounter!.log.length;
+      s = talk(s, t).state;
+      return s.encounter!.log.slice(n + 1).map((l) => l.text).join(" ");
+    };
+    expect(said("e aí, beleza?")).toMatch(/Ferroviário|luta/);
+    expect(said("tem alguma novidade?")).toMatch(/Opala|centroavante/);
+    if (s.encounter!.pending) said("pode ir, eu espero");
+    const conf = said("ah é o quê?");
+    expect(conf).toMatch(/Desculpa/);
+    const all = s.encounter!.log.filter((l) => l.who === "npc").map((l) => l.text);
+    expect(all.some((t) => /voltando ao assunto|Enfim|me diz uma coisa|sobre o que você veio/.test(t))).toBe(true);
+    for (const t of all) expect(t.trim().length).toBeGreaterThan(3);
+  });
+});
