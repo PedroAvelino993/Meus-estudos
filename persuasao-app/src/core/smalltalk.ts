@@ -32,6 +32,8 @@ export function smallTalkAnswer(raw: string, c: Character, e: EncounterState): s
   if (/ (seu nome|como (voce|vc|o senhor|a senhora) se chama|quem e (voce|vc)) /.test(t)) return `Sou ${c.name}${c.nick ? `, mas todo mundo me chama de ${c.nick}` : ""}.`;
   if (/ quantos anos /.test(t)) return `Tenho ${c.age} anos.${c.age >= 60 ? " Bem vividos." : ""}`;
   if (/ (novidade|novidades|o que ha de novo|quais as novas|alguma noticia|o que (tem|ta|esta) acontecendo|que (que )?ta rolando) /.test(t)) return pick(talk.novidade, e.turn + raw.length);
+  // "Como está seu filho?" é sobre a família, não "como você está?"
+  if (/ (filho|filhos|filha|filhas|familia|marido|esposa|mulher|neto|neta|netos|seus pais|sua mae|seu pai|o caio|a rose|a lurdes) /.test(t) && (asks || / como /.test(t))) return talk.familia;
   if (/ (tudo bem|tudo bom|tudo certo|como vai|como (voce|vc|o senhor|a senhora) (esta|ta|vai)|como esta|beleza|td bem|como anda|como (foi|ta) (o|seu) dia) /.test(t)) return pick(talk.comoVai, e.turn + raw.length);
   if (!asks) return null;
 
@@ -58,7 +60,7 @@ export function smallTalkAnswer(raw: string, c: Character, e: EncounterState): s
     if (other) return other.district === c.district ? `Conheço, claro. ${other.nick ?? other.name.split(" ")[0]} é ${other.role.toLowerCase()} aqui perto. Todo mundo conhece.` : `De nome. Dizem que é ${other.role.toLowerCase()} lá em ${other.district === "paco" ? "Paço Municipal" : "outro bairro"}.`;
     return "Acho que não. Devia?";
   }
-  if (/ (trabalha|trabalho|profiss|o que (voce|vc|o senhor|a senhora) faz|emprego|servico|ganha a vida) /.test(t)) return talk.trabalho;
+  if (/ (trabalha|trabalho|vende|vendem|profiss|o que (voce|vc|o senhor|a senhora) faz|emprego|servico|ganha a vida) /.test(t)) return talk.trabalho;
   if (/ (filho|filhos|filha|familia|marido|esposa|mulher|neto|neta|casad|seus pais|sua mae|seu pai|mora com quem) /.test(t)) return talk.familia;
   if (/ (dinheiro|salario|grana|financ|as contas|aperto|ganha bem|ta dificil) /.test(t)) return e.attrs.trust < 30 ? "Isso é assunto meu. Não abro a minha vida para quem acabei de conhecer." : talk.dinheiro;
   if (/ (onde (voce|vc|o senhor|a senhora) mora|mora (onde|aqui|perto)|seu bairro|sua casa) /.test(t)) return talk.casa;

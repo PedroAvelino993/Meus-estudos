@@ -8,7 +8,7 @@ import { character, district } from "../content";
 import { optionsFor, persuasionScore, resultOf, type LogEntry } from "../core/encounter";
 import { understand } from "../core/understand";
 import { anyMission, collapseNpcLines, finishEncounter, heatFactor, leaveEncounter, playerCtx, setLogText, talk } from "../core/game";
-import { aiActive, loadAi, npcReply, saveAi, type AiSettings } from "../ai";
+import { AiRepeat, aiActive, loadAi, npcReply, saveAi, type AiSettings } from "../ai";
 import { LOCAL_MODELS, hasWebGPU, loadLocal } from "../local-llm";
 import { moodFace, tellsOf } from "../core/persona";
 import { ATTRS, ATTR_LABEL, LOOT_LABEL, OUTCOME_LABEL, TACTIC_LABEL, type Attr, type Attrs } from "../core/types";
@@ -121,6 +121,7 @@ export default function Encounter() {
       setAiErrors(0);
     } catch (err) {
       act((g) => setLogText(g, index, info.lines.join(" ")));
+      if (err instanceof AiRepeat) return;
       setAiErrors((n) => n + 1);
       toast({ text: `${err instanceof Error ? err.message : "Erro na IA."} Esta fala saiu pronta.`, tone: "red", icon: TriangleAlert, ms: 6000 });
     } finally {

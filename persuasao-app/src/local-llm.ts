@@ -124,7 +124,7 @@ export async function removeLocal(model: string) {
 }
 
 /** Gera a resposta em pedaços (streaming). */
-export async function localComplete(model: string, messages: LocalMessage[], onText: (t: string) => void, onStatus?: (t: string) => void): Promise<string> {
+export async function localComplete(model: string, messages: LocalMessage[], onText: (t: string) => void, onStatus?: (t: string) => void, temperature = 0.8): Promise<string> {
   const fake = (globalThis as { __persuasaoFakeLLM?: FakeLLM }).__persuasaoFakeLLM;
   if (fake) {
     const full = fake.reply(messages);
@@ -138,16 +138,16 @@ export async function localComplete(model: string, messages: LocalMessage[], onT
   }
   markBusy(true);
   try {
-    return await generate(model, messages, onText, onStatus);
+    return await generate(model, messages, onText, onStatus, temperature);
   } finally {
     markBusy(false);
   }
 }
 
-async function generate(model: string, messages: LocalMessage[], onText: (t: string) => void, onStatus?: (t: string) => void): Promise<string> {
+async function generate(model: string, messages: LocalMessage[], onText: (t: string) => void, onStatus?: (t: string) => void, temperature = 0.8): Promise<string> {
   const eng = await loadLocal(model, (p, t) => onStatus?.(p < 1 ? `Carregando a IA… ${Math.round(p * 100)}%` : t));
   onStatus?.("");
-  const stream = await eng!.chat.completions.create({ messages, stream: true, temperature: 0.8, top_p: 0.9, max_tokens: 140 });
+  const stream = await eng!.chat.completions.create({ messages, stream: true, temperature, top_p: 0.9, max_tokens: 140, repetition_penalty: 1.15, frequency_penalty: 0.5, presence_penalty: 0.4 });
   let text = "";
   let last = 0;
   for await (const chunk of stream) {

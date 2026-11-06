@@ -126,6 +126,13 @@ export function understand(typed: string, s: EncounterState, m: Mission, c: Char
     if (close) return { optionId: "u-close", tactic, score: 1 };
     return { optionId: "u-free:urgency", tactic: "urgency", score: 0 };
   }
+  // Tocar no assunto de um ponto fraco ainda escondido (ex.: «Zênite» com o Valdir) é uma sondagem
+  if (opts.some((o) => o.id === "u-question")) {
+    const said = stems(typed);
+    const unknownNeeds = c.needs.filter((n) => !s.known.includes(n.id));
+    const touches = unknownNeeds.some((n) => stems(n.label).some((x) => x.length >= 5 && !topic.has(x) && said.includes(x)));
+    if (touches) return { optionId: "u-question", tactic: "question", score: 0.6 };
+  }
   if (tactic === "question" || NEED_WORDS.test(t)) {
     if (NEED_WORDS.test(t) && opts.some((o) => o.id === "u-question")) return { optionId: "u-question", tactic: "question", score: 0.5 };
   }

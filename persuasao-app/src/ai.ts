@@ -186,6 +186,8 @@ function directionText(d: Direction, first: string): string {
 }
 
 export class AiError extends Error {}
+/** A IA só repetiu o que já tinha dito: usa a fala pronta, sem contar como erro. */
+export class AiRepeat extends AiError {}
 
 /** Escreve a fala do personagem na hora. `onText` recebe o texto parcial enquanto chega. */
 export async function npcReply(opts: {
@@ -272,6 +274,17 @@ O jogador conversa com você. O que ele quer (você não sabe): ${brief}
 Regras: responda só a fala de ${first}, em português do Brasil coloquial, em 1 a 3 frases curtas. Responda primeiro ao que o jogador perguntou. Não narre, não diga que é IA, não dite números de cartão ou senha.`;
 }
 
+/** Quanto duas falas se parecem (0 a 1), pelas palavras em comum. */
+export function similar(a: string, b: string): number {
+  const w = (t: string) => new Set(t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]{3,}/g) ?? []);
+  const A = w(a);
+  const B = w(b);
+  if (!A.size || !B.size) return 0;
+  let n = 0;
+  for (const x of A) if (B.has(x)) n++;
+  return n / Math.min(A.size, B.size);
+}
+
 /** Estimativa grosseira de tokens (português ≈ 3 caracteres por token). */
 const tokens = (t: string) => Math.ceil(t.length / 3);
 const LOCAL_BUDGET = 1500;
@@ -283,9 +296,12 @@ async function localReply(opts: Parameters<typeof npcReply>[0]): Promise<string>
     .split("\n\n")
     .filter((p) => !p.startsWith("Estado de"))
     .join("\n");
-  const system = `${compactSheet(c, m)}\n\n${direction}`;
+  const avoid = opts.history.filter((l) => l.who === "npc" && l.text.trim()).slice(-3).map((l) => `«${l.text.slice(0, 90)}»`);
+  const system = `${compactSheet(c, m)}\n\n${direction}${avoid.length ? `\n\nVocê já disse: ${avoid.join(" ")}. NÃO repita essas frases; responda algo novo, ligado ao que o jogador acabou de dizer.` : ""}`;
+  // Modelos pequenos copiam as próprias falas: mostramos pouco histórico e pedimos algo novo
+  const said = opts.history.filter((l) => l.who === "npc" && l.text.trim()).slice(-3).map((l) => l.text);
   const hist = transcript(opts.history)
-    .slice(-6)
+    .slice(-4)
     .map((x) => ({ role: x.role as "user" | "assistant", content: String(x.content).slice(0, 300) }));
   // Corta o histórico até caber na memória do modelo
   while (hist.length && tokens(system) + hist.reduce((a, x) => a + tokens(x.content), 0) + tokens(opts.typed ?? "") + 60 > LOCAL_BUDGET) hist.shift();
@@ -297,8 +313,12 @@ async function localReply(opts: Parameters<typeof npcReply>[0]): Promise<string>
   // Modelos pequenos se perdem: lembra no fim o que fazer com a fala do jogador
   if (opts.direction.free && opts.typed) messages[messages.length - 1] = { role: "user", content: `${messages[messages.length - 1].content}\n\n(Responda a isso como ${first}, direto ao ponto, em 1 ou 2 frases.)` };
   try {
-    const raw = await localComplete(settings.localModel, messages, (t) => opts.onText(cleanReply(t, c)), opts.onStatus);
-    const text = cleanReply(raw, c);
+    let text = cleanReply(await localComplete(settings.localModel, messages, (t) => opts.onText(cleanReply(t, c)), opts.onStatus), c);
+    // Se saiu igual (ou quase) a algo que já disse, tenta de novo mais "solto"; se repetir, usa a fala pronta
+    if (said.some((p) => similar(p, text) > 0.7)) {
+      text = cleanReply(await localComplete(settings.localModel, messages, (t) => opts.onText(cleanReply(t, c)), opts.onStatus, 1.05), c);
+      if (said.some((p) => similar(p, text) > 0.7)) throw new AiRepeat("A IA repetiu a mesma fala.");
+    }
     if (!text) throw new AiError("A IA do aparelho não respondeu.");
     return text;
   } catch (e) {

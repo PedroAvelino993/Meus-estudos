@@ -891,10 +891,15 @@ export function talk(s0: GameState, raw: string): TalkResult {
       const negative = enc.log[i].reaction === "offended";
       let text = generic;
       if (answer) text = negative && !answer.startsWith("Desculpa") ? `${generic} ${answer}` : answer;
-      else if (isBland(generic)) text = `${generic} ${enc.turn % 3 === 0 ? offTopic(c) ?? "" : ""}`.trim();
+      else if (isBland(generic)) {
+        const ot = offTopic(c);
+        const said = ot && enc.log.some((l) => l.text.includes(ot));
+        text = `${generic} ${ot && !said ? ot : ""}`.trim();
+      }
       // Puxa de volta para o assunto (a pergunta da etapa atual), sem repetir a mesma frase
       const steer = steerLine(m, enc);
-      const alreadySaid = enc.log.slice(Math.max(0, i - 6), i).some((l) => l.text.includes(steer));
+      // Puxa o assunto no máximo uma vez a cada várias falas (antes repetia a mesma frase)
+      const alreadySaid = enc.log.slice(Math.max(0, i - 14), i).some((l) => l.text.includes(steer));
       const lead = ["Mas, voltando ao assunto: ", "Enfim. ", "Mas me diz uma coisa: ", "Bom, e sobre o que você veio falar? "][enc.turn % 4];
       if (!alreadySaid && !text.endsWith("?") && !enc.pending) text = `${text} ${lead}${lead.endsWith("? ") ? "" : `${steer.charAt(0).toUpperCase()}${steer.slice(1)}`}`.trim();
       const log = [...enc.log];
