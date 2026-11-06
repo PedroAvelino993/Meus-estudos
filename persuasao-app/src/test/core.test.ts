@@ -457,3 +457,18 @@ describe("salvamento", () => {
 });
 
 void ({} as Mission);
+
+describe("IA: nada fica em branco", () => {
+  it("a fala pronta fica salva enquanto a IA escreve, e falas vazias antigas são consertadas", async () => {
+    const { collapseNpcLines, talk } = await import("../core/game");
+    let s = startMission(newGame("Alex", 0, 9), "m-cida");
+    const from = s.encounter!.log.length;
+    s = talk(s, "tudo bem?").state;
+    const r = collapseNpcLines(s, from, null);
+    expect(r.index).toBeGreaterThan(-1);
+    expect(r.state.encounter!.log[r.index].text.trim().length).toBeGreaterThan(0);
+    const broken = { ...r.state, encounter: { ...r.state.encounter!, log: r.state.encounter!.log.map((l, i) => (i === r.index ? { ...l, text: "" } : l)) } };
+    const fixed = migrate(JSON.parse(JSON.stringify(broken)))!;
+    expect(fixed.encounter!.log.every((l) => l.who !== "npc" || l.text.trim().length > 0)).toBe(true);
+  });
+});

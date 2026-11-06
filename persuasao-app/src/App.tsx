@@ -13,6 +13,7 @@ import { CHAPTERS, ENDINGS } from "./content/story";
 import { district } from "./content";
 import { type GameState, clock, daySummary, endDay, levelOf, unread } from "./core/game";
 import { currentSlot, load, loadPrefs, save, savePrefs, type Prefs } from "./store";
+import { recoverFromCrash } from "./ai";
 import { ACH_ICONS, Ctx, Modal, fmt, sfx, type GameCtx, type Toast, type View } from "./ui";
 
 function Confetti() {
@@ -42,6 +43,12 @@ export default function App() {
   const [prefs, setPrefsState] = useState<Prefs>(loadPrefs);
   const tid = useRef(1);
 
+  // Se a IA do aparelho travou a página da última vez, ajusta e avisa
+  const noticeRef = useRef<string | null>(null);
+  useEffect(() => {
+    noticeRef.current = recoverFromCrash();
+  }, []);
+
   useEffect(() => {
     document.body.classList.toggle("reduce-motion", prefs.reducedMotion);
   }, [prefs.reducedMotion]);
@@ -49,7 +56,7 @@ export default function App() {
   const toast = useCallback((t: Omit<Toast, "id">) => {
     const id = tid.current++;
     setToasts((x) => [...x.slice(-3), { ...t, id }]);
-    setTimeout(() => setToasts((x) => x.filter((y) => y.id !== id)), 3200);
+    setTimeout(() => setToasts((x) => x.filter((y) => y.id !== id)), t.ms ?? 3200);
   }, []);
 
   const begin = (s: GameState, n: number) => {
@@ -58,6 +65,11 @@ export default function App() {
     setSlot(n);
     save(n, s);
     setView(s.encounter ? "district" : "home");
+    if (noticeRef.current) {
+      const text = noticeRef.current;
+      noticeRef.current = null;
+      setTimeout(() => toast({ text, tone: "red", ms: 9000 }), 600);
+    }
     window.scrollTo(0, 0);
   };
 

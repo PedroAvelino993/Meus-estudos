@@ -93,7 +93,7 @@ export default function Encounter() {
     let snapshot = s;
     act((g) => {
       snapshot = g;
-      const r = collapseNpcLines(g, from, "");
+      const r = collapseNpcLines(g, from, null);
       info = { index: r.index, lines: r.lines };
       if (r.index < 0) return g;
       return opening ? { ...r.state, encounter: { ...r.state.encounter!, flags: [...r.state.encounter!.flags, "ai-open"] } } : r.state;

@@ -8,7 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Character, Mission, Reaction } from "./core/types";
 import type { EncounterState, LogEntry } from "./core/encounter";
 import { OUTCOME_LABEL } from "./core/types";
-import { LOCAL_MODELS, hasWebGPU, localComplete, suggestedLocalModel, type LocalMessage } from "./local-llm";
+import { LOCAL_MODELS, crashedLastTime, hasWebGPU, localComplete, suggestedLocalModel, type LocalMessage } from "./local-llm";
 
 export const AI_MODELS = [
   { id: "claude-opus-5-5", name: "Claude Opus 5.5", note: "melhor escrita (padrão)" },
@@ -44,6 +44,23 @@ export function saveAi(a: AiSettings) {
   } catch {
     /* sem armazenamento */
   }
+}
+
+/**
+ * Chamado ao abrir o jogo. Se a IA do aparelho travou a página da última vez, troca para um
+ * modelo menor (ou desliga a IA, se já era o menor) e devolve um aviso para mostrar ao jogador.
+ */
+export function recoverFromCrash(): string | null {
+  if (!crashedLastTime()) return null;
+  const a = loadAi();
+  if (a.provider !== "local" || !a.enabled) return null;
+  const i = LOCAL_MODELS.findIndex((m) => m.id === a.localModel);
+  if (i > 0) {
+    saveAi({ ...a, localModel: LOCAL_MODELS[0].id, localReady: false });
+    return "A IA travou o aparelho por falta de memória. Troquei para o modelo Mínimo (menor). Toque em «Ligar IA grátis» na conversa para baixá-lo.";
+  }
+  saveAi({ ...a, enabled: false });
+  return "A IA travou o aparelho por falta de memória, mesmo no modelo Mínimo. Desliguei a IA: o jogo segue com as falas prontas. Dá para religar em Celular → Ajustes.";
 }
 
 export function aiActive(a: AiSettings): boolean {

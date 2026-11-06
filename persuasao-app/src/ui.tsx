@@ -58,6 +58,7 @@ export interface Toast {
   text: string;
   tone?: "gold" | "green" | "red";
   icon?: LucideIcon;
+  ms?: number;
 }
 
 export interface GameCtx {

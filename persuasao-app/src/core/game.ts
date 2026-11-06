@@ -822,7 +822,9 @@ export function migrate(raw: unknown): GameState | null {
   const g = raw as Partial<GameState>;
   if (!g.player || typeof g.money !== "number") return null;
   const base = newGame(g.player.name, g.player.avatar ?? 0, g.seed);
-  return { ...base, ...g, heat: g.heat ?? 0, arrests: g.arrests ?? 0, loot: g.loot ?? [], version: SAVE_VERSION, stats: { ...base.stats, ...(g.stats ?? {}) }, dayStats: { ...base.dayStats, ...(g.dayStats ?? {}) } } as GameState;
+  // Conserta falas vazias deixadas por versões antigas (a página fechou enquanto a IA escrevia)
+  const enc = g.encounter ? { ...g.encounter, log: g.encounter.log.map((l) => (l.who === "npc" && !l.text.trim() ? { ...l, text: "Desculpa, me perdi no que eu tava dizendo. Pode repetir?" } : l)) } : g.encounter;
+  return { ...base, ...g, encounter: enc ?? null, heat: g.heat ?? 0, arrests: g.arrests ?? 0, loot: g.loot ?? [], version: SAVE_VERSION, stats: { ...base.stats, ...(g.stats ?? {}) }, dayStats: { ...base.dayStats, ...(g.dayStats ?? {}) } } as GameState;
 }
 
 export const ALL_ITEMS = ITEMS;
@@ -911,7 +913,7 @@ export function talk(s0: GameState, raw: string): TalkResult {
  * Junta as falas prontas do personagem a partir de `from` numa só entrada (que a IA vai escrever).
  * Devolve o estado e o índice da entrada. As linhas do sistema ("Você descobriu…") ficam onde estão.
  */
-export function collapseNpcLines(s: GameState, from: number, text: string): { state: GameState; index: number; lines: string[] } {
+export function collapseNpcLines(s: GameState, from: number, text: string | null): { state: GameState; index: number; lines: string[] } {
   const e = s.encounter;
   if (!e) return { state: s, index: -1, lines: [] };
   const tail = e.log.slice(from);
@@ -919,7 +921,8 @@ export function collapseNpcLines(s: GameState, from: number, text: string): { st
   if (!npc.length) return { state: s, index: -1, lines: [] };
   const firstIdx = from + tail.findIndex((l) => l.who === "npc");
   const last = npc[npc.length - 1];
-  const merged = { who: "npc" as const, text, reaction: last.reaction, delta: npc.find((l) => l.delta)?.delta };
+  // Guarda a fala pronta até a IA terminar: se a página fechar no meio, nada fica em branco
+  const merged = { who: "npc" as const, text: text ?? npc.map((l) => l.text).join(" "), reaction: last.reaction, delta: npc.find((l) => l.delta)?.delta };
   const log = [...e.log.slice(0, from), ...tail.filter((l) => l.who !== "npc")];
   log.splice(firstIdx, 0, merged);
   return { state: { ...s, encounter: { ...e, log } }, index: firstIdx, lines: npc.map((l) => l.text) };

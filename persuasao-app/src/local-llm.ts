@@ -14,9 +14,36 @@ export const LOCAL_MODELS = [
 export function suggestedLocalModel(): string {
   const mobile = typeof navigator !== "undefined" && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
   const mem = (typeof navigator !== "undefined" && (navigator as { deviceMemory?: number }).deviceMemory) || 8;
-  if (mobile && mem <= 4) return LOCAL_MODELS[0].id;
-  if (mobile) return LOCAL_MODELS[1].id;
+  // No celular, o Mínimo: os maiores podem esgotar a memória e o navegador reinicia a página
+  if (mobile) return LOCAL_MODELS[0].id;
+  if (mem <= 4) return LOCAL_MODELS[1].id;
   return LOCAL_MODELS[2].id;
+}
+
+// ---------- Proteção contra travamentos ----------
+// Antes de usar a IA, marcamos "em uso". Se a página reabrir com a marca ainda lá, o aparelho
+// travou no meio (falta de memória). Aí trocamos para um modelo menor ou desligamos a IA.
+const BUSY = "persuasao:ai-busy";
+let depth = 0;
+
+export function markBusy(on: boolean) {
+  depth = Math.max(0, depth + (on ? 1 : -1));
+  try {
+    if (depth > 0) localStorage.setItem(BUSY, String(Date.now()));
+    else localStorage.removeItem(BUSY);
+  } catch {
+    /* sem armazenamento */
+  }
+}
+
+export function crashedLastTime(): boolean {
+  try {
+    const v = localStorage.getItem(BUSY);
+    localStorage.removeItem(BUSY);
+    return !!v;
+  } catch {
+    return false;
+  }
 }
 
 export interface LocalMessage {
@@ -62,9 +89,14 @@ export async function loadLocal(model: string, onProgress?: (p: number, text: st
     engine = null;
   }
   loaded = model;
-  loading = CreateWebWorkerMLCEngine(new Worker(new URL("./llm-worker.ts", import.meta.url), { type: "module" }), model, {
-    initProgressCallback: (r: InitProgressReport) => onProgress?.(r.progress, r.text),
-  });
+  markBusy(true);
+  // Janela de contexto menor = muito menos memória (celulares fechavam a página por falta de memória)
+  loading = CreateWebWorkerMLCEngine(
+    new Worker(new URL("./llm-worker.ts", import.meta.url), { type: "module" }),
+    model,
+    { initProgressCallback: (r: InitProgressReport) => onProgress?.(r.progress, r.text) },
+    { context_window_size: 1536 },
+  );
   try {
     engine = await loading;
     return engine;
@@ -73,6 +105,7 @@ export async function loadLocal(model: string, onProgress?: (p: number, text: st
     throw e;
   } finally {
     loading = null;
+    markBusy(false);
   }
 }
 
@@ -103,13 +136,29 @@ export async function localComplete(model: string, messages: LocalMessage[], onT
     }
     return full;
   }
+  markBusy(true);
+  try {
+    return await generate(model, messages, onText, onStatus);
+  } finally {
+    markBusy(false);
+  }
+}
+
+async function generate(model: string, messages: LocalMessage[], onText: (t: string) => void, onStatus?: (t: string) => void): Promise<string> {
   const eng = await loadLocal(model, (p, t) => onStatus?.(p < 1 ? `Carregando a IA… ${Math.round(p * 100)}%` : t));
   onStatus?.("");
-  const stream = await eng!.chat.completions.create({ messages, stream: true, temperature: 0.8, top_p: 0.9, max_tokens: 200 });
+  const stream = await eng!.chat.completions.create({ messages, stream: true, temperature: 0.8, top_p: 0.9, max_tokens: 140 });
   let text = "";
+  let last = 0;
   for await (const chunk of stream) {
     text += chunk.choices[0]?.delta?.content ?? "";
-    onText(text);
+    // Atualiza a tela no máximo ~8 vezes por segundo (menos peso no celular)
+    const now = Date.now();
+    if (now - last > 120) {
+      last = now;
+      onText(text);
+    }
   }
+  onText(text);
   return text;
 }
