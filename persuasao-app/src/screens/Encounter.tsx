@@ -84,7 +84,10 @@ export default function Encounter() {
 
   // Falas geradas na hora pela IA (se o jogador configurou a chave em Ajustes)
   const [ai, setAi] = useState(loadAi);
-  const [aiBroken, setAiBroken] = useState(false);
+  // Um erro isolado não desliga a IA; dois seguidos, sim (até o jogador pedir de novo)
+  const [aiErrors, setAiErrors] = useState(0);
+  const aiBroken = aiErrors >= 2;
+  const setAiBroken = (b: boolean) => setAiErrors(b ? 2 : 0);
   const aiOn = aiActive(ai) && !aiBroken;
   const openedRef = useRef(false);
 
@@ -115,10 +118,11 @@ export default function Encounter() {
         onStatus: setAiStatus,
       });
       act((g) => setLogText(g, index, text));
+      setAiErrors(0);
     } catch (err) {
       act((g) => setLogText(g, index, info.lines.join(" ")));
-      setAiBroken(true);
-      toast({ text: `${err instanceof Error ? err.message : "Erro na IA."} Usando as falas prontas nesta conversa.`, tone: "red", icon: TriangleAlert });
+      setAiErrors((n) => n + 1);
+      toast({ text: `${err instanceof Error ? err.message : "Erro na IA."} Esta fala saiu pronta.`, tone: "red", icon: TriangleAlert, ms: 6000 });
     } finally {
       setAiLive(null);
       setAiStatus("");
@@ -292,7 +296,23 @@ export default function Encounter() {
               </div>
             )}
             {e.counter && <CounterInfo />}
-            {!aiOn && <AiOffer onReady={(n) => setAi(n)} />}
+            {!aiOn && aiBroken && aiActive(ai) ? (
+              <div className="composer-note ai-offer row between wrap small">
+                <span>A IA deu um erro na última fala e esta saiu pronta.</span>
+                <button className="btn sm green" onClick={() => setAiBroken(false)}>
+                  Usar a IA de novo
+                </button>
+              </div>
+            ) : (
+              !aiOn && (
+                <AiOffer
+                  onReady={(n) => {
+                    setAi(n);
+                    setAiBroken(false);
+                  }}
+                />
+              )
+            )}
             {hint && <Hints />}
             {preview && (
               <div className="row wrap composer-note tiny">

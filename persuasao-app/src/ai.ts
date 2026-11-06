@@ -261,13 +261,34 @@ export async function testKey(settings: AiSettings): Promise<string> {
 }
 
 /** Versão para a IA local: tudo vai no começo (modelos pequenos seguem melhor assim) e o histórico é curto. */
+/** Ficha curta para a IA do aparelho: modelos pequenos têm pouca memória para ler. */
+function compactSheet(c: Character, m: Mission): string {
+  const first = c.nick ?? c.name.split(" ")[0];
+  const bio = (c.bio.match(/^[^.]+\./) ?? [c.bio])[0];
+  const brief = (m.brief.replace(/\{name\}/g, first).match(/^[^.]+\./) ?? [m.brief])[0];
+  return `Você é ${c.name} (${first}), ${c.age} anos, ${c.role.toLowerCase()}, numa cidade inventada chamada Vila Áurea. ${bio} Família: ${c.family} Gosta de: ${c.likes.slice(0, 3).join(", ")}. Não gosta de: ${c.dislikes.slice(0, 2).join(", ")}.
+Jeito de falar: ${c.voice.greet[0]}
+O jogador conversa com você. O que ele quer (você não sabe): ${brief}
+Regras: responda só a fala de ${first}, em português do Brasil coloquial, em 1 a 3 frases curtas. Responda primeiro ao que o jogador perguntou. Não narre, não diga que é IA, não dite números de cartão ou senha.`;
+}
+
+/** Estimativa grosseira de tokens (português ≈ 3 caracteres por token). */
+const tokens = (t: string) => Math.ceil(t.length / 3);
+const LOCAL_BUDGET = 1500;
+
 async function localReply(opts: Parameters<typeof npcReply>[0]): Promise<string> {
   const { settings, character: c, mission: m } = opts;
   const first = c.nick ?? c.name.split(" ")[0];
-  const system = `${characterSheet(c, m)}\n\n${directionText(opts.direction, first)}\n\nAgora responda só com a fala de ${first}, em português do Brasil, em no máximo 3 frases curtas.`;
+  const direction = directionText(opts.direction, first)
+    .split("\n\n")
+    .filter((p) => !p.startsWith("Estado de"))
+    .join("\n");
+  const system = `${compactSheet(c, m)}\n\n${direction}`;
   const hist = transcript(opts.history)
-    .slice(-10)
-    .map((x) => ({ role: x.role as "user" | "assistant", content: String(x.content) }));
+    .slice(-6)
+    .map((x) => ({ role: x.role as "user" | "assistant", content: String(x.content).slice(0, 300) }));
+  // Corta o histórico até caber na memória do modelo
+  while (hist.length && tokens(system) + hist.reduce((a, x) => a + tokens(x.content), 0) + tokens(opts.typed ?? "") + 60 > LOCAL_BUDGET) hist.shift();
   while (hist.length && hist[0].role !== "user") hist.shift();
   const messages: LocalMessage[] = [{ role: "system", content: system }, ...hist];
   const last = opts.typed ?? "(Uma pessoa que você não conhece se aproxima e puxa conversa.)";
@@ -284,7 +305,8 @@ async function localReply(opts: Parameters<typeof npcReply>[0]): Promise<string>
     if (e instanceof AiError) throw e;
     const msg = e instanceof Error ? e.message : String(e);
     if (/webgpu|gpu|adapter/i.test(msg)) throw new AiError("Este navegador não conseguiu usar a placa de vídeo (WebGPU).");
-    if (/memory|oom|allocation/i.test(msg)) throw new AiError("Faltou memória para o modelo. Tente o modelo Leve.");
+    if (/memory|oom|allocation/i.test(msg)) throw new AiError("Faltou memória para o modelo. Tente o modelo Mínimo em Ajustes.");
+    if (/context|window|exceed|too long/i.test(msg)) throw new AiError("A conversa ficou longa demais para a IA do aparelho.");
     throw new AiError(`A IA do aparelho falhou: ${msg.slice(0, 120)}`);
   }
 }

@@ -95,7 +95,7 @@ export async function loadLocal(model: string, onProgress?: (p: number, text: st
     new Worker(new URL("./llm-worker.ts", import.meta.url), { type: "module" }),
     model,
     { initProgressCallback: (r: InitProgressReport) => onProgress?.(r.progress, r.text) },
-    { context_window_size: 1536 },
+    { context_window_size: 2048 },
   );
   try {
     engine = await loading;
