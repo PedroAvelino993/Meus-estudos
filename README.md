@@ -50,3 +50,21 @@ O código-fonte fica em `russky-app/` (React + TypeScript + Vite) e o app public
 Jogo de ficção em que você é um golpista recém-chegado a Vila Áurea, uma cidade inventada com 7 bairros e 30 personagens. Você conversa escrevendo livremente, como numa troca de mensagens. Descobre o ponto fraco de cada pessoa e arranca dinheiro, dados, cartões e acessos. Com o lucro, compra ferramentas melhores no mercado clandestino, que liberam bairros e alvos mais importantes, até o golpe final no cofre da prefeitura. Cada golpe gera calor policial: se chegar a 100, você é preso, e na terceira prisão o jogo acaba. Tem celular dentro do jogo (conta, contatos, mensagens, central de butim e radar da polícia, mercado, perfil e ajustes), 5 capítulos com quatro finais, árvore de habilidades, conquistas, golpes rápidos e desafios diários. Abre em `/persuasao/` no mesmo link do GitHub Pages.
 
 É tudo ficção: pessoas, empresas, contas e cartões são inventados e aparecem sempre mascarados (`•••• 1234`). As ferramentas são itens de jogo, sem nenhuma instrução real, e o jogo não pede nem guarda dados reais. O código-fonte fica em `persuasao-app/` (React + TypeScript + Vite) e o jogo publicado é gerado em `persuasao/`. Detalhes em `persuasao-app/README.md`.
+
+## COLOSSEUM INC. — estratégia, administração e expansão mundial
+
+Jogo de gestão em que você recebe uma arena de madeira para 500 pessoas em Roma, com três gladiadores desconhecidos, e precisa transformá-la no maior império do entretenimento do mundo antigo. São 6 eras, da Pequena Arena ao Legado Eterno, com:
+
+- espetáculos calculados com estimativa antes e relatório depois;
+- árvore de evolução com 75 melhorias em 6 categorias, incluindo escolhas exclusivas;
+- gladiadores com atributos, personalidade, história, rivalidades e amizades;
+- construções em vários níveis;
+- mapa com 7 regiões para filiais;
+- a rival Dominus Arena, com IA própria, e a Rebelião das Arenas;
+- crises;
+- o Arena Bets;
+- a Central Imperial.
+
+Abre em `/colosseum/` no mesmo link do GitHub Pages.
+
+O Arena Bets usa só fichas fictícias e gratuitas, sem compra, venda, saque ou conversão em dinheiro. Espetáculos roteirizados (Decreto Imperial) são sempre identificados e nunca recebem mercados de previsão; as competições livres são calculadas pelo motor do jogo. O código-fonte fica em `colosseum-app/` (React + TypeScript + Vite) e o jogo publicado é gerado em `colosseum/`. Detalhes em `colosseum-app/README.md`.

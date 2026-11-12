@@ -1,0 +1,16 @@
+{
+  "name": "Colosseum Inc.",
+  "short_name": "Colosseum",
+  "description": "Estratégia, administração e expansão mundial de um império do entretenimento romano.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#120f0c",
+  "theme_color": "#120f0c",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
