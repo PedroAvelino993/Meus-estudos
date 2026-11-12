@@ -96,8 +96,8 @@ export const DECREE_STORIES: DecreeStory[] = [
 ];
 
 export const TUTORIAL = [
-  { id: "t1", title: "Seu primeiro espetáculo", text: "Vá em Eventos, escolha o Combate de demonstração, dois gladiadores e um preço. Veja a estimativa e confirme.", check: "events>=1" },
-  { id: "t2", title: "Avance a semana", text: "Toque em «Avançar semana» no topo. O evento acontece, salários são pagos e o mundo se move.", check: "week>=2" },
+  { id: "t1", title: "Seu primeiro espetáculo", text: "Vá em Eventos → Novo evento. Escolha o Combate de demonstração, dois gladiadores e um preço, veja a estimativa e toque em Confirmar. Depois toque em «Iniciar evento agora».", check: "events>=1" },
+  { id: "t2", title: "Avance a semana", text: "Toque em «Iniciar evento agora» (ou no botão dourado do topo). O evento acontece, os salários são pagos e o mundo se move.", check: "week>=2" },
   { id: "t3", title: "Evolua", text: "Use pontos de evolução na Árvore. Comece por algo barato, como Noite de duelos ou Cartazes.", check: "nodes>=1" },
   { id: "t4", title: "Construa", text: "Em Construção, amplie a arquibancada quando o público começar a ficar de fora.", check: "builds>=1" },
   { id: "t5", title: "Contrate", text: "No mercado de gladiadores, contrate alguém que combine com as modalidades que você quer.", check: "hires>=1" },

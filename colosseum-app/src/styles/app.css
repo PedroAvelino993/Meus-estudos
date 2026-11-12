@@ -902,6 +902,10 @@ table.table {
   top: 74px;
 }
 
+.go-bar {
+  display: none;
+}
+
 /* ---------- Mobile ---------- */
 
 .bottom-nav {
@@ -942,6 +946,30 @@ table.table {
   }
   .planner-side {
     position: static;
+  }
+  .go-bar {
+    display: flex;
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    z-index: 40;
+    gap: 8px;
+    align-items: center;
+    padding: 10px;
+    border-radius: 14px;
+    border: 1px solid var(--gold-dim);
+    background: rgba(29, 24, 19, 0.97);
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.5);
+  }
+  .go-bar .info {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .content {
+    padding-bottom: 190px;
   }
   .bottom-nav {
     display: flex;
@@ -995,7 +1023,11 @@ table.table {
     padding: 16px;
   }
   .toasts {
-    bottom: 84px;
+    top: 64px;
+    bottom: auto;
+    right: 10px;
+    left: 10px;
+    max-width: none;
   }
   .hide-mobile {
     display: none !important;
@@ -1011,6 +1043,10 @@ table.table {
   }
   .btn.advance span.long {
     display: none;
+  }
+  .btn.advance {
+    padding: 9px 12px;
+    letter-spacing: 0.04em;
   }
 }
 

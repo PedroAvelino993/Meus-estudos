@@ -27,6 +27,11 @@ interface Ctx {
 
 const GameCtx = createContext<Ctx | null>(null);
 
+/** Pede ao painel principal para realizar os eventos (avançar a semana). */
+export function requestAdvance() {
+  window.dispatchEvent(new Event("colosseum:advance"));
+}
+
 export function useGame(): Ctx {
   const c = useContext(GameCtx);
   if (!c) throw new Error("useGame fora do provedor");

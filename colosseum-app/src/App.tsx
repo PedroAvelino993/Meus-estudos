@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BarChart3, Building2, Castle, Coins, Crown, Dices, Flame, Gem, Globe2, Hourglass, Landmark, ScrollText, Settings, Sparkles, Swords, Trophy, Users } from "lucide-react";
 import type { GameState } from "./core/state";
 import { newGame } from "./core/state";
@@ -154,6 +154,11 @@ function Shell() {
     const ok = act((x) => advanceWeek(x));
     if (ok) setSummary(true);
   };
+  useEffect(() => {
+    const h = () => advance();
+    window.addEventListener("colosseum:advance", h);
+    return () => window.removeEventListener("colosseum:advance", h);
+  });
 
   const lockedTab = (id: string) => (id === "bets" && !betsOpen(s) ? "Arena Bets abre no nível Magnata dos Espetáculos" : id === "rival" && !s.rival.active && !s.rival.defeated ? "A concorrência aparece na Era 2" : null);
   const Screen = { coliseu: Home, eventos: Events, gladiadores: Gladiators, evolucao: Evolution, construcao: Construction, mundo: World, bets: Bets, rival: Rival, central: Imperial, cronica: Chronicle, ajustes: SettingsScreen }[tab] ?? Home;
@@ -229,7 +234,8 @@ function Shell() {
               "Crise!"
             ) : (
               <>
-                <span className="long">Avançar</span> semana {s.week}
+                {s.plans.length ? "Iniciar eventos" : "Avançar"}
+                <span className="long"> · semana {s.week}</span>
               </>
             )}
           </button>

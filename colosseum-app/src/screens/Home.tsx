@@ -1,12 +1,12 @@
 // Painel do Coliseu: a tela inicial da campanha.
 
-import { AlertTriangle, ArrowRight, Building2, CalendarClock, Coins, Gem, Globe2, Landmark, Scale, ScrollText, Shield, Trophy, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, Play, Building2, CalendarClock, Coins, Gem, Globe2, Landmark, Scale, ScrollText, Shield, Trophy, Users } from "lucide-react";
 import { capacity, weeklyExpenses, weeklyIncome } from "../core/economy";
 import { authority, estimate } from "../core/events";
 import { authorityName, authorityProgress, eraNeeds, victoryGoals } from "../core/progression";
 import { strategyLabel } from "../core/rival";
 import { ERAS, REGIONS, modality } from "../content/world";
-import { useGame } from "../ui/game";
+import { requestAdvance, useGame } from "../ui/game";
 import { ColosseumArt } from "../ui/art";
 import { Bar, Card, LineChart, Stat, fmt, money, one } from "../ui/kit";
 
@@ -125,6 +125,11 @@ export default function Home() {
             <div className="small muted" style={{ marginTop: 10 }}>
               Último: {recent.name} — {fmt(recent.attendance)} pessoas, {recent.satisfaction}% de satisfação.
             </div>
+          )}
+          {s.plans.length > 0 && (
+            <button className="btn gold" style={{ marginTop: 10, marginRight: 8 }} onClick={requestAdvance}>
+              <Play size={15} /> Iniciar {s.plans.length === 1 ? "evento" : "eventos"} agora
+            </button>
           )}
           <button className="btn sm" style={{ marginTop: 10 }} onClick={() => go("eventos")}>
             Abrir planejamento

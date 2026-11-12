@@ -1,7 +1,7 @@
 // Eventos: planejamento com estimativa ao vivo, Decreto Imperial (roteirizado), Ateliê e relatórios.
 
 import { useMemo, useState } from "react";
-import { Ban, Check, Dices, Drama, Flame, Info, Lock, Pencil, Plus, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { Ban, Check, Dices, Drama, Flame, Info, Lock, Pencil, Play, Plus, Sparkles, Trash2, Wand2 } from "lucide-react";
 import type { Decree, EventPlan } from "../core/types";
 import { capacity, refPrice, slots } from "../core/economy";
 import { authority, availableGladiators, estimate, modalityAvailable, modalityLock, planIssues, storyFit, suggestName } from "../core/events";
@@ -11,7 +11,7 @@ import { betsOpen, createMarket, marketIssue } from "../core/bets";
 import { ATELIER, EXTRAS, MODALITIES, modality, region } from "../content/world";
 import { DECREE_STORIES } from "../content/story";
 import { SPECIALTY_LABEL } from "../core/types";
-import { useGame } from "../ui/game";
+import { requestAdvance, useGame } from "../ui/game";
 import { Card, Empty, Head, Seg, fmt, money } from "../ui/kit";
 import { ReportView } from "./Overlays";
 
@@ -35,6 +35,19 @@ export default function Events() {
       />
       {tab === "plan" && (
         <>
+          {!editing && s.plans.length > 0 && (
+              <div className="card gilded">
+                <div className="row between wrap">
+                  <div>
+                    <h3>{s.plans.length === 1 ? "1 evento pronto" : `${s.plans.length} eventos prontos`} para a semana {s.week}</h3>
+                    <div className="small muted">Os eventos acontecem quando você inicia a semana. Antes disso dá para editar, cancelar ou abrir mercados.</div>
+                  </div>
+                  <button className="btn gold advance" onClick={requestAdvance}>
+                    <Play size={16} /> Iniciar {s.plans.length === 1 ? "evento" : "eventos"} agora
+                  </button>
+                </div>
+              </div>
+            )}
           {!editing && (
             <div className="grid g3">
               {venues.map((v) => {
@@ -51,7 +64,7 @@ export default function Events() {
                     <button className="btn gold block" disabled={free <= 0 || availableGladiators(s).length < 2} onClick={() => startNew(v)}>
                       <Plus size={16} /> Novo evento
                     </button>
-                    {availableGladiators(s).length < 2 && <div className="tiny neg" style={{ marginTop: 6 }}>Faltam gladiadores disponíveis (descansando, lesionados ou já escalados).</div>}
+                    {free > 0 && availableGladiators(s).length < 2 && <div className="tiny neg" style={{ marginTop: 6 }}>Faltam gladiadores disponíveis (descansando, lesionados ou já escalados).</div>}
                   </div>
                 );
               })}
@@ -60,6 +73,7 @@ export default function Events() {
           {editing ? (
             <Planner plan={editing} onClose={() => setEditing(null)} />
           ) : (
+            <>
             <Card title="Programação da semana" icon={<Flame size={16} />}>
               {s.plans.length === 0 ? (
                 <Empty>Nada planejado ainda. Crie um evento acima — ou contrate um Diretor de eventos em Construção para planejar sozinho.</Empty>
@@ -71,6 +85,7 @@ export default function Events() {
                 </div>
               )}
             </Card>
+            </>
           )}
         </>
       )}
@@ -160,7 +175,7 @@ function Planner({ plan: initial, onClose }: { plan: EventPlan; onClose: () => v
 
   const save = () => {
     const decree = p.decree ? { ...p.decree, fame: { [p.decree.winner]: 4, ...(p.decree.surprise ? { [p.decree.surprise]: 3 } : {}) } } : undefined;
-    if (act((x) => savePlan(x, { ...p, decree }), "Evento confirmado.", issues[0])) onClose();
+    if (act((x) => savePlan(x, { ...p, decree }), "Evento confirmado! Toque em «Iniciar evento agora» para realizá-lo.", issues[0])) onClose();
   };
 
   return (
@@ -400,13 +415,31 @@ function Planner({ plan: initial, onClose }: { plan: EventPlan; onClose: () => v
           </div>
           <div className="row" style={{ marginTop: 12 }}>
             <button className="btn gold" style={{ flex: 1 }} disabled={issues.length > 0} onClick={save}>
-              Confirmar evento
+              {issues.length ? "Corrija os itens acima" : "Confirmar evento"}
             </button>
             <button className="btn" onClick={onClose}>
               Voltar
             </button>
           </div>
         </section>
+      </div>
+      <div className="go-bar">
+        <div className="info">
+          {issues.length ? (
+            <span className="neg">✗ {issues[0]}</span>
+          ) : (
+            <>
+              <b>{fmt(e.attendance)} pessoas · {e.satisfaction}%</b>
+              <div className={e.profit >= 0 ? "pos" : "neg"}>Lucro ≈ {money(e.profit)}</div>
+            </>
+          )}
+        </div>
+        <button className="btn sm" onClick={onClose}>
+          Voltar
+        </button>
+        <button className="btn gold" disabled={issues.length > 0} onClick={save}>
+          <Check size={15} /> Confirmar
+        </button>
       </div>
     </div>
   );
