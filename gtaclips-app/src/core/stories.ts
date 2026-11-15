@@ -1,0 +1,361 @@
+// Continuidade narrativa: transforma os momentos em histórias curtas com começo,
+// desenvolvimento e conclusão, na ordem em que aconteceram, ou em episódios sequenciais.
+
+import type { Category, Clip, GenerateSettings, Moment, Segment } from "./types";
+import { category, linked } from "./categories";
+import { mergeContiguous, seg, totalDuration } from "./timeline";
+import { defaultStyle } from "./captions";
+import { uid } from "./format";
+
+/** Uma "linha" de acontecimentos relacionados (ex.: crime → polícia → fuga → batida). */
+export interface Thread {
+  moments: Moment[];
+  start: number;
+  end: number;
+  score: number;
+  climax: Moment;
+}
+
+/** Tempo morto curto entre acontecimentos ligados ainda pertence à mesma história. */
+const MAX_GAP = 20;
+
+export function buildThreads(moments: Moment[]): Thread[] {
+  const live = moments.filter((m) => !m.dead && m.score >= 18);
+  const threads: Thread[] = [];
+  let cur: Moment[] = [];
+  const flush = () => {
+    if (!cur.length) return;
+    const climax = cur.reduce((a, b) => (b.score > a.score ? b : a));
+    const top3 = [...cur].sort((a, b) => b.score - a.score).slice(0, 3);
+    const score = climax.score * 0.6 + (top3.reduce((a, m) => a + m.score, 0) / top3.length) * 0.4;
+    threads.push({ moments: cur, start: cur[0].start, end: cur[cur.length - 1].end, score, climax });
+    cur = [];
+  };
+  for (const m of live) {
+    const last = cur[cur.length - 1];
+    if (last) {
+      const gap = m.start - last.end;
+      const related = linked(last.category, m.category) || (category(last.category).action && category(m.category).action);
+      if (gap > MAX_GAP || (!related && gap > 4) || m.end - cur[0].start > 240) flush();
+    }
+    cur.push(m);
+  }
+  flush();
+  return threads;
+}
+
+/** Divide uma linha longa em duas no ponto mais calmo (para gerar mais histórias diferentes). */
+function splitThread(t: Thread): Thread[] | null {
+  if (t.moments.length < 4) return null;
+  let best = -1;
+  let low = Infinity;
+  for (let i = 2; i < t.moments.length - 1; i++) {
+    const v = t.moments[i].score;
+    if (v < low) ((low = v), (best = i));
+  }
+  if (best < 0) return null;
+  const parts = [t.moments.slice(0, best), t.moments.slice(best)];
+  return parts.map((ms) => {
+    const climax = ms.reduce((a, b) => (b.score > a.score ? b : a));
+    return { moments: ms, start: ms[0].start, end: ms[ms.length - 1].end, score: climax.score * 0.6 + (ms.reduce((a, m) => a + m.score, 0) / ms.length) * 0.4, climax };
+  });
+}
+
+/** Recorta a linha nas pontas: fica do primeiro ao último acontecimento forte, com um vizinho de cada lado. */
+export function trimThread(t: Thread): Thread {
+  const strongMin = Math.max(45, t.climax.score * 0.75);
+  const idx = t.moments.map((m, i) => (m.score >= strongMin ? i : -1)).filter((i) => i >= 0);
+  if (!idx.length) return t;
+  const a = Math.max(0, idx[0] - 1);
+  const b = Math.min(t.moments.length - 1, idx[idx.length - 1] + 1);
+  const ms = t.moments.slice(a, b + 1);
+  return { ...t, moments: ms, start: ms[0].start, end: ms[ms.length - 1].end };
+}
+
+interface Piece {
+  start: number;
+  end: number;
+  score: number;
+}
+
+/**
+ * Escolhe os trechos de uma história para caber em `target` segundos:
+ * mantém contexto antes do primeiro acontecimento, um bloco contínuo em volta do clímax e um
+ * desfecho, e completa com os melhores trechos vizinhos — sempre em ordem cronológica.
+ */
+export function pickStoryBlocks(t0: Thread, all: Moment[], target: number, context: number, duration: number): Segment[] {
+  const t = trimThread(t0);
+  const first = t.moments.find((m) => m.score >= Math.max(45, t.climax.score * 0.75)) ?? t.moments[0];
+  const peak = t.climax.peakT;
+  // Linha do tempo por segundo da história: nota de cada segundo
+  const lo = Math.max(0, first.start - context);
+  const hi = Math.min(duration, t.end);
+  const secScore = (sec: number) => {
+    const m = t.moments.find((x) => sec >= x.start && sec < x.end) ?? all.find((x) => sec >= x.start && sec < x.end);
+    if (!m) return 0;
+    if (m.dead) return sec >= first.start - context && sec < first.start ? 8 : -50;
+    return m.score + (Math.abs(sec - m.peakT) < 2.5 ? 20 : 0);
+  };
+  const usable: number[] = [];
+  for (let sec = Math.floor(lo); sec < Math.ceil(hi); sec++) if (secScore(sec) > 0) usable.push(sec);
+  const picked = new Set<number>();
+  const add = (a: number, b: number) => {
+    for (let sec = Math.floor(a); sec < Math.ceil(b); sec++) if (usable.includes(sec)) picked.add(sec);
+  };
+  if (usable.length <= target * 1.08) usable.forEach((x) => picked.add(x));
+  else {
+    // 1) Contexto antes do primeiro acontecimento (encolhe em clipes muito curtos)
+    const ctx = Math.min(context, Math.max(1.5, target * 0.1));
+    add(first.start - ctx, first.start);
+    // 2) Começo do primeiro acontecimento
+    add(first.start, first.start + Math.min(4, target * 0.12));
+    // 3) Clímax contínuo (antes e depois do pico)
+    add(peak - target * 0.22, peak + target * 0.13);
+    // 4) Desfecho: os segundos finais da história, se não forem tempo morto
+    const lastLive = [...usable].reverse()[0];
+    if (lastLive > peak + 3) add(lastLive - Math.min(3, target * 0.1), lastLive + 1);
+    // 5) Completa com os melhores segundos, preferindo os vizinhos do que já entrou
+    const rank = (sec: number) => secScore(sec) + (picked.has(sec - 1) || picked.has(sec + 1) ? 25 : 0);
+    while (picked.size < target) {
+      const cands = usable.filter((x) => !picked.has(x));
+      if (!cands.length) break;
+      let best = cands[0];
+      let bv = -Infinity;
+      for (const c of cands) {
+        const v = rank(c);
+        if (v > bv) ((bv = v), (best = c));
+      }
+      picked.add(best);
+      // Ganha blocos de pelo menos 2 s para não picotar
+      if (!picked.has(best + 1) && usable.includes(best + 1) && picked.size < target) picked.add(best + 1);
+    }
+    // Remove ilhas de 1 s isoladas (picotam o vídeo) se sobrar tempo
+    for (const sec of [...picked]) if (!picked.has(sec - 1) && !picked.has(sec + 1) && picked.size > target * 0.9) picked.delete(sec);
+  }
+  const secs = [...picked].sort((a, b) => a - b);
+  const pieces: Piece[] = [];
+  for (const sec of secs) {
+    const last = pieces[pieces.length - 1];
+    if (last && sec === last.end) last.end = sec + 1;
+    else pieces.push({ start: sec, end: sec + 1, score: 0 });
+  }
+  return mergeContiguous(pieces.map((p) => seg(Math.max(0, p.start), Math.min(duration, p.end))), 0.6);
+}
+
+const ARC_LABEL = ["Começo", "Desenvolvimento", "Clímax", "Desfecho"] as const;
+
+/** Rótulos da história (começo, desenvolvimento, clímax, desfecho) com o tempo original. */
+export function storyBeats(t0: Thread, segments: Segment[]): { t: number; label: string }[] {
+  const t = trimThread(t0);
+  const beats: { t: number; label: string }[] = [];
+  const kept = t.moments.filter((m) => segments.some((s) => s.start < m.end && s.end > m.start));
+  if (!kept.length) return beats;
+  beats.push({ t: kept[0].start, label: `${ARC_LABEL[0]}: ${category(kept[0].category).name.toLowerCase()}` });
+  for (const m of kept.slice(1)) {
+    if (m === t.climax) beats.push({ t: m.peakT, label: `${ARC_LABEL[2]}: ${category(m.category).name.toLowerCase()}` });
+    else if (m.start < t.climax.start) beats.push({ t: m.start, label: `${ARC_LABEL[1]}: ${category(m.category).name.toLowerCase()}` });
+  }
+  if (kept[0] === t.climax) beats.push({ t: t.climax.peakT, label: `${ARC_LABEL[2]}: ${category(t.climax.category).name.toLowerCase()}` });
+  const last = segments[segments.length - 1];
+  beats.push({ t: last.end - 1, label: `${ARC_LABEL[3]}` });
+  return beats;
+}
+
+const TITLE_BY_PAIR: Partial<Record<string, string>> = {
+  "perseguicao>acidente": "A fuga terminou numa batida",
+  "perseguicao>explosao": "A perseguição acabou em explosão",
+  "policia>perseguicao": "A polícia não deu trégua",
+  "tiroteio>policia": "O tiroteio chamou a polícia",
+  "acidente>explosao": "Bateu… e explodiu",
+  "queda>engracado": "A queda mais absurda",
+  "aereo>queda": "Do céu direto para o chão",
+  "briga>policia": "A briga que virou caso de polícia",
+};
+
+const TITLE_BY_CAT: Record<Category, string> = {
+  perseguicao: "Fuga alucinante da polícia",
+  policia: "Cercado pela polícia",
+  explosao: "Que explosão foi essa?",
+  acidente: "A batida que ninguém esperava",
+  tiroteio: "Troca de tiros no meio da cidade",
+  briga: "A briga saiu do controle",
+  engracado: "Isso só acontece no GTA",
+  queda: "Que queda!",
+  aereo: "Voo arriscado",
+  aquatico: "Fuga pela água",
+  cinematico: "Cena de cinema",
+  cutscene: "Momento da história",
+  conducao: "Pé na estrada",
+  andando: "Passeio",
+  menu: "Menu",
+  carregamento: "Carregando",
+  mapa: "Mapa",
+  parado: "Espera",
+};
+
+export function storyTitle(t: Thread): string {
+  const cats = t.moments.map((m) => m.category);
+  for (let i = 0; i < cats.length; i++) {
+    for (let j = i + 1; j < cats.length; j++) {
+      const key = `${cats[i]}>${cats[j]}`;
+      if (TITLE_BY_PAIR[key]) return TITLE_BY_PAIR[key]!;
+    }
+  }
+  return TITLE_BY_CAT[t.climax.category];
+}
+
+export function storySummary(t: Thread): string {
+  const names = [...new Set(t.moments.map((m) => category(m.category).name.toLowerCase()))];
+  if (names.length === 1) return `Trecho de ${names[0]}, com o melhor momento aos ${Math.floor(t.climax.peakT / 60)}:${String(Math.floor(t.climax.peakT % 60)).padStart(2, "0")}.`;
+  return `Começa com ${names[0]}, passa por ${names.slice(1, -1).join(", ") || names[1]} e termina com ${names[names.length - 1]}.`;
+}
+
+function baseClip(settings: GenerateSettings, partial: Pick<Clip, "title" | "story" | "beats" | "category" | "score" | "segments"> & { part?: number }): Clip {
+  return {
+    id: uid("c"),
+    ...partial,
+    format: settings.format,
+    reframe: settings.reframe,
+    zoom: 1,
+    fps: settings.fps,
+    captions: [],
+    captionLang: settings.captionLang,
+    captionsOn: settings.captions,
+    captionStyle: defaultStyle(settings.captionStyle, settings.format),
+    adjust: { brightness: 1, contrast: 1, saturation: 1 },
+    volume: 1,
+    normalize: true,
+    transition: "fade",
+    removeSilence: settings.removeSilence,
+    updatedAt: Date.now(),
+  };
+}
+
+export interface GenerateResult {
+  clips: Clip[];
+  notes: string[];
+}
+
+/** Modo histórias: cada clipe conta uma história diferente, sem repetir trechos. */
+export function generateStories(moments: Moment[], settings: GenerateSettings, duration: number): GenerateResult {
+  const notes: string[] = [];
+  let threads = buildThreads(moments).sort((a, b) => b.score - a.score);
+  // Sem material suficiente: divide as linhas mais longas em histórias menores
+  let guard = 0;
+  while (threads.length < settings.count && guard++ < 20) {
+    const longest = [...threads].sort((a, b) => b.end - b.start - (a.end - a.start))[0];
+    if (!longest || longest.end - longest.start < settings.duration * 0.9) break;
+    const parts = splitThread(longest);
+    if (!parts) break;
+    threads = [...threads.filter((t) => t !== longest), ...parts].sort((a, b) => b.score - a.score);
+  }
+  const chosen = threads.slice(0, settings.count);
+  if (chosen.length < settings.count) notes.push(`O vídeo tem material para ${chosen.length} história(s) diferente(s) sem repetir trechos; foram criados ${chosen.length} clipe(s) em vez de ${settings.count}.`);
+  const clips = chosen
+    .sort((a, b) => a.start - b.start)
+    .map((t) => {
+      const segments = pickStoryBlocks(t, moments, settings.duration, settings.context, duration);
+      const len = totalDuration(segments);
+      if (t.score < 45) notes.push(`«${storyTitle(t)}» tem pouca ação: é o melhor material que sobrou, mas pode render menos.`);
+      if (len < settings.duration * 0.6) notes.push(`«${storyTitle(t)}» ficou com ${Math.round(len)}s: não havia mais acontecimentos relevantes nessa história para chegar a ${Math.round(settings.duration)}s.`);
+      return baseClip(settings, { title: storyTitle(t), story: storySummary(t), beats: storyBeats(t, segments), category: t.climax.category, score: Math.round(t.score), segments });
+    });
+  return { clips, notes };
+}
+
+/**
+ * Modo história contínua: divide a gravação em episódios sequenciais. Corta o tempo morto,
+ * mantém a ordem e encerra cada parte num momento de tensão (gancho real para a próxima).
+ */
+export function generateContinuous(moments: Moment[], intensity: number[], settings: GenerateSettings): GenerateResult {
+  const notes: string[] = [];
+  // Tempo útil: tudo que não é tempo morto (pausas curtas de até 2 s ficam, para não picotar)
+  const useful: Moment[] = moments.filter((m) => !m.dead || m.end - m.start <= 2);
+  let blocks: { start: number; end: number; score: number }[] = useful.map((m) => ({ start: m.start, end: m.end, score: m.dead ? 0 : m.score }));
+  const capacity = settings.count * settings.duration;
+  const total = blocks.reduce((a, b) => a + (b.end - b.start), 0);
+  if (total > capacity) {
+    // Comprime cada momento em vez de pular momentos inteiros: a continuidade fica preservada.
+    // Momentos fracos encolhem mais; cada um mantém a janela em volta do seu pico.
+    // Sem picotar demais: cada momento precisa de pelo menos ~6 s; se nem assim couber,
+    // os momentos mais fracos saem primeiro.
+    const minKeep = (b: { start: number; end: number }) => Math.min(b.end - b.start, 6);
+    let dropped = 0;
+    while (blocks.reduce((a, b) => a + minKeep(b), 0) > capacity * 0.85 && blocks.length > 1) {
+      const weakest = blocks.reduce((a, b) => (b.score < a.score ? b : a));
+      blocks = blocks.filter((b) => b !== weakest);
+      dropped++;
+    }
+    if (dropped) notes.push(`${dropped} trecho(s) fraco(s) ficaram de fora para não picotar os episódios.`);
+    const weight = (b: { score: number }) => 0.25 + b.score / 100;
+    let r = 1;
+    for (let it = 0; it < 30; it++) {
+      const sum = blocks.reduce((a, b) => a + Math.min(b.end - b.start, (b.end - b.start) * r * weight(b)), 0);
+      r *= capacity / Math.max(1, sum);
+    }
+    const peakOf = (b: { start: number; end: number }) => moments.find((m) => m.start === b.start)?.peakT ?? (b.start + b.end) / 2;
+    blocks = blocks
+      .map((b) => {
+        const len = b.end - b.start;
+        const keep = Math.round(Math.min(len, len * r * weight(b)));
+        if (keep < 2) return null;
+        const p = peakOf(b);
+        const start = Math.max(b.start, Math.min(b.end - keep, Math.round(p - keep * 0.6)));
+        return { start, end: start + keep, score: b.score };
+      })
+      .filter((b): b is { start: number; end: number; score: number } => b !== null);
+    notes.push(`A gravação tem mais acontecimentos do que cabe em ${settings.count} parte(s) de ${Math.round(settings.duration)}s: cada momento foi encurtado (os mais fracos, mais), sem pular a sequência.`);
+  }
+  // Linha contínua com o tempo útil
+  const flat: { src: number; out: number }[] = [];
+  let out = 0;
+  for (const b of blocks) {
+    for (let s = b.start; s < b.end; s++) {
+      flat.push({ src: s, out });
+      out++;
+    }
+  }
+  const parts = Math.min(settings.count, Math.max(1, Math.ceil(flat.length / Math.max(5, settings.duration * 0.5))));
+  if (parts < settings.count) notes.push(`Só há material útil para ${parts} parte(s).`);
+  const per = flat.length / parts;
+  const cuts: number[] = [0];
+  for (let p = 1; p < parts; p++) {
+    // Procura um gancho entre 80% e 100% da parte: intensidade alta e subindo
+    const ideal = Math.round(p * per);
+    let best = ideal;
+    let bestV = -Infinity;
+    for (let k = Math.max(cuts[cuts.length - 1] + 5, Math.round(ideal - per * 0.2)); k <= Math.min(flat.length - 5, ideal); k++) {
+      const src = flat[k].src;
+      const v = (intensity[src] ?? 0) + Math.max(0, (intensity[src] ?? 0) - (intensity[src - 2] ?? 0)) * 1.5 - (intensity[src + 2] ?? 0) * 0.3;
+      if (v > bestV) ((bestV = v), (best = k));
+    }
+    cuts.push(best);
+  }
+  cuts.push(flat.length);
+  const clips: Clip[] = [];
+  for (let p = 0; p < parts; p++) {
+    const range = flat.slice(cuts[p], cuts[p + 1]);
+    if (!range.length) continue;
+    const segments = mergeContiguous(range.map((r) => seg(r.src, r.src + 1)), 0.6);
+    const inPart = moments.filter((m) => !m.dead && segments.some((s) => s.start < m.end && s.end > m.start));
+    const best = inPart.reduce<Moment | null>((a, b) => (!a || b.score > a.score ? b : a), null);
+    const lastM = inPart[inPart.length - 1];
+    const cliff = p < parts - 1 && lastM ? ` Termina em ${category(lastM.category).name.toLowerCase()} — continua na parte ${p + 2}.` : "";
+    clips.push(
+      baseClip(settings, {
+        title: `Parte ${p + 1}${best ? ` — ${TITLE_BY_CAT[best.category]}` : ""}`,
+        story: `Episódio ${p + 1} de ${parts}, em ordem cronológica.${cliff}`,
+        beats: inPart.slice(0, 6).map((m) => ({ t: m.start, label: category(m.category).name })),
+        category: best?.category ?? "conducao",
+        score: best?.score ?? 0,
+        segments,
+        part: p + 1,
+      }),
+    );
+  }
+  return { clips, notes };
+}
+
+export function generate(moments: Moment[], intensity: number[], settings: GenerateSettings, duration: number): GenerateResult {
+  return settings.mode === "continua" ? generateContinuous(moments, intensity, settings) : generateStories(moments, settings, duration);
+}

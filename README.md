@@ -68,3 +68,16 @@ Jogo de gestão em que você recebe uma arena de madeira para 500 pessoas em Rom
 Abre em `/colosseum/` no mesmo link do GitHub Pages.
 
 O Arena Bets usa só fichas fictícias e gratuitas, sem compra, venda, saque ou conversão em dinheiro. Espetáculos roteirizados (Decreto Imperial) são sempre identificados e nunca recebem mercados de previsão; as competições livres são calculadas pelo motor do jogo. O código-fonte fica em `colosseum-app/` (React + TypeScript + Vite) e o jogo publicado é gerado em `colosseum/`. Detalhes em `colosseum-app/README.md`.
+
+## GTA Clips AI — clipes curtos de gameplay com IA
+
+Plataforma de edição automatizada que transforma gravações longas de gameplay (como 40 minutos de GTA 6) em clipes curtos com começo, desenvolvimento e conclusão, prontos para o YouTube Shorts.
+
+- **Análise:** uma IA de visão (CLIP) e medidas de imagem e som identificam e pontuam (0–100) perseguições, explosões, batidas e tiroteios. Menus, carregamentos e esperas são cortados.
+- **Montagem:** as histórias saem em ordem cronológica, ou em episódios no modo história contínua.
+- **Legendas:** automáticas (Whisper), com detecção de idioma, tradução (NLLB ou Claude) e 5 estilos.
+- **Editor manual:** linha do tempo e prévia fiel ao resultado final.
+- **Exportação:** MP4 real em 1080p, a 30 ou 60 FPS, com ZIP.
+- **YouTube:** curso de canal e monetização, requisitos oficiais e análise do canal pela API oficial.
+
+Tudo roda no navegador do próprio aparelho, sem servidor. Abre em `/gtaclips/` no mesmo link do GitHub Pages. O código-fonte fica em `gtaclips-app/` e o app publicado é gerado em `gtaclips/`. Detalhes em `gtaclips-app/README.md`.

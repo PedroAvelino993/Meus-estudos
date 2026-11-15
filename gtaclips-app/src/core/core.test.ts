@@ -1,0 +1,225 @@
+import { describe, expect, it } from "vitest";
+import type { AudioEnvelope, GenerateSettings, Sample } from "./types";
+import { buildMoments, buildTimeline } from "./moments";
+import { buildThreads, generate } from "./stories";
+import { insertSegment, moveSegment, outToSource, removeSegment, removeSilences, seg, sourceToOut, splitAt, totalDuration, trimSegment } from "./timeline";
+import { chunksToCaptions, cleanChunks, detectLanguage, toSrt } from "./captions";
+import { analyzePerformance, isoDuration } from "./learning";
+import { frameStats } from "./features";
+
+/** Roteiro de uma gameplay sintética: [início, fim, tipo]. */
+const SCRIPT: [number, number, string][] = [
+  [0, 60, "andando"],
+  [60, 80, "menu"],
+  [80, 140, "dirigindo"],
+  [140, 200, "perseguicao"],
+  [200, 206, "batida"],
+  [206, 214, "explosao"],
+  [214, 260, "dirigindo"],
+  [260, 285, "carregamento"],
+  [285, 400, "andando"],
+  [400, 440, "tiroteio"],
+  [440, 480, "perseguicao"],
+  [480, 600, "dirigindo"],
+];
+
+function kindAt(t: number) {
+  return SCRIPT.find(([a, b]) => t >= a && t < b)?.[2] ?? "andando";
+}
+
+function synth(): { samples: Sample[]; audio: AudioEnvelope; duration: number } {
+  const samples: Sample[] = [];
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let t = 0; t < 600; t += 1.5) {
+    const k = kindAt(t);
+    const base: Sample = { t, motion: 0.06, brightness: 0.45, saturation: 0.4, fire: 0, siren: 0, detail: 0.25, variance: 0.3, cut: false, cx: 0.5 };
+    if (k === "menu") Object.assign(base, { motion: 0.005, saturation: 0.1, detail: 0.3, brightness: 0.3 });
+    if (k === "carregamento") Object.assign(base, { motion: 0.002, brightness: 0.03, detail: 0.01, variance: 0.02 });
+    if (k === "dirigindo") Object.assign(base, { motion: 0.18 });
+    if (k === "perseguicao") Object.assign(base, { motion: 0.4 + rnd() * 0.2, siren: 0.015 });
+    if (k === "batida") Object.assign(base, { motion: 0.7 });
+    if (k === "explosao") Object.assign(base, { motion: 0.5, fire: 0.15, brightness: 0.7 });
+    if (k === "tiroteio") Object.assign(base, { motion: 0.3 });
+    samples.push(base);
+  }
+  const rms: number[] = [];
+  for (let i = 0; i < 600 * 4; i++) {
+    const k = kindAt(i / 4);
+    let v = 0.2 + rnd() * 0.05;
+    if (k === "menu" || k === "carregamento") v = 0.01;
+    if (k === "perseguicao") v = 0.6 + rnd() * 0.2;
+    if (k === "batida" || k === "explosao") v = 0.98;
+    if (k === "tiroteio") v = 0.9 * (i % 3 === 0 ? 1 : 0.6);
+    rms.push(v);
+  }
+  return { samples, audio: { rate: 4, rms }, duration: 600 };
+}
+
+const settings = (p: Partial<GenerateSettings> = {}): GenerateSettings => ({ mode: "historias", count: 3, duration: 30, format: "9:16", reframe: "acao", fps: 30, captions: false, captionLang: "pt", captionStyle: "viral", removeSilence: false, context: 3, ...p });
+
+describe("identificação de momentos", () => {
+  const { samples, audio, duration } = synth();
+  const tl = buildTimeline(samples, audio, duration);
+  const moments = buildMoments(tl);
+
+  it("marca menus, carregamento e esperas como tempo morto", () => {
+    const at = (t: number) => moments.find((m) => t >= m.start && t < m.end)!;
+    expect(at(70).dead).toBe(true);
+    expect(at(270).dead).toBe(true);
+    expect(at(70).score).toBeLessThanOrEqual(12);
+  });
+
+  it("dá notas altas para perseguição, batida e explosão", () => {
+    const action = moments.filter((m) => m.start >= 140 && m.end <= 215 && !m.dead);
+    const calm = moments.filter((m) => m.start >= 285 && m.end <= 400);
+    expect(Math.max(...action.map((m) => m.score))).toBeGreaterThan(55);
+    expect(Math.max(...action.map((m) => m.score))).toBeGreaterThan(Math.max(...calm.map((m) => m.score)) + 15);
+    expect(moments.every((m) => m.score >= 0 && m.score <= 100)).toBe(true);
+    expect(moments.some((m) => m.category === "explosao")).toBe(true);
+  });
+
+  it("cada momento tem descrição, duração e miniatura dentro do trecho", () => {
+    for (const m of moments) {
+      expect(m.description.length).toBeGreaterThan(5);
+      expect(m.thumbT).toBeGreaterThanOrEqual(m.start);
+      expect(m.thumbT).toBeLessThanOrEqual(m.end);
+    }
+  });
+
+  it("agrupa acontecimentos relacionados numa mesma história", () => {
+    const threads = buildThreads(moments);
+    const chase = threads.find((t) => t.start <= 160 && t.end >= 205);
+    expect(chase).toBeTruthy();
+  });
+
+  describe("criação dos clipes", () => {
+    it("modo histórias: clipes com a duração pedida, em ordem e sem repetir trechos", () => {
+      const { clips } = generate(moments, tl.intensity, settings({ count: 2, duration: 30 }), duration);
+      expect(clips.length).toBe(2);
+      const all: [number, number][] = [];
+      for (const c of clips) {
+        const d = totalDuration(c.segments);
+        expect(d).toBeGreaterThan(15);
+        expect(d).toBeLessThanOrEqual(36);
+        for (let i = 1; i < c.segments.length; i++) expect(c.segments[i].start).toBeGreaterThanOrEqual(c.segments[i - 1].end);
+        all.push(...c.segments.map((s) => [s.start, s.end] as [number, number]));
+        expect(c.beats.length).toBeGreaterThan(1);
+      }
+      all.sort((a, b) => a[0] - b[0]);
+      for (let i = 1; i < all.length; i++) expect(all[i][0]).toBeGreaterThanOrEqual(all[i - 1][1] - 0.001);
+    });
+
+    it("a história principal mantém contexto antes e o clímax (explosão)", () => {
+      const { clips } = generate(moments, tl.intensity, settings({ count: 1, duration: 45 }), duration);
+      const c = clips[0];
+      expect(c.segments[0].start).toBeLessThan(150);
+      expect(c.segments.some((s) => s.start <= 210 && s.end >= 207)).toBe(true);
+    });
+
+    it("pedido maior que o material: avisa em vez de inventar clipes", () => {
+      const { clips, notes } = generate(moments, tl.intensity, settings({ count: 10, duration: 60 }), duration);
+      expect(clips.length).toBeLessThan(10);
+      expect(notes.join(" ")).toMatch(/material/);
+    });
+
+    it("modo história contínua: partes em sequência, sem tempo morto longo", () => {
+      const { clips } = generate(moments, tl.intensity, settings({ mode: "continua", count: 4, duration: 60 }), duration);
+      expect(clips.length).toBe(4);
+      let last = -1;
+      for (const c of clips) {
+        expect(c.part).toBeDefined();
+        expect(c.segments[0].start).toBeGreaterThanOrEqual(last);
+        last = c.segments[c.segments.length - 1].end;
+        for (const s of c.segments) expect(s.start >= 60 && s.end <= 80).toBe(false);
+      }
+      expect(clips[0].story).toMatch(/continua na parte 2/);
+    });
+  });
+});
+
+describe("linha do tempo", () => {
+  const base = [seg(10, 20), seg(50, 55), seg(100, 110)];
+  it("mapeia tempo do clipe ↔ original", () => {
+    expect(totalDuration(base)).toBe(25);
+    expect(outToSource(base, 12)).toEqual({ index: 1, src: 52 });
+    expect(sourceToOut(base, 105)).toBe(20);
+    expect(sourceToOut(base, 30)).toBeNull();
+  });
+  it("corta, exclui, reordena, ajusta e adiciona trechos", () => {
+    let s = splitAt(base, 5);
+    expect(s.length).toBe(4);
+    expect(totalDuration(s)).toBe(25);
+    s = removeSegment(s, s[0].id);
+    expect(totalDuration(s)).toBe(20);
+    s = moveSegment(s, s[s.length - 1].id, -1);
+    expect(s[s.length - 1].start).toBe(50);
+    s = trimSegment(s, s[0].id, 14, 30, 600);
+    expect(s[0].start).toBe(14);
+    s = insertSegment(s, 300, 304);
+    expect(s[s.length - 1].start).toBe(300);
+  });
+  it("remoção de silêncios corta só trechos mudos e parados", () => {
+    const audio = { rate: 4, rms: Array.from({ length: 400 }, (_, i) => (i >= 40 && i < 60 ? 0.01 : 0.5)) };
+    const samples: Sample[] = Array.from({ length: 100 }, (_, i) => ({ t: i, motion: i >= 10 && i < 15 ? 0.01 : 0.3, brightness: 0.5, saturation: 0.4, fire: 0, siren: 0, detail: 0.2, variance: 0.3, cut: false, cx: 0.5 }));
+    const out = removeSilences([seg(0, 30)], audio, samples);
+    expect(out.length).toBe(2);
+    expect(totalDuration(out)).toBeLessThan(27);
+  });
+});
+
+describe("legendas", () => {
+  it("limpa alucinações e repetições do reconhecimento de fala", () => {
+    const out = cleanChunks([
+      { text: " Corre, corre que a polícia tá vindo!", start: 1, end: 3 },
+      { text: "Thank you for watching!", start: 3, end: 5 },
+      { text: "Corre, corre que a polícia tá vindo!", start: 5, end: 6 },
+      { text: "no no no no no no no", start: 6, end: 8 },
+    ]);
+    expect(out.length).toBe(1);
+    expect(out[0].end).toBe(6);
+  });
+  it("detecta o idioma falado", () => {
+    expect(detectLanguage("mano você viu isso? a polícia tá vindo aqui agora")).toBe("pt");
+    expect(detectLanguage("oh man, what are you doing? get in the car")).toBe("en");
+    expect(detectLanguage("¿qué haces? vamos, la policía está aquí")).toBe("es");
+  });
+  it("quebra frases longas e gera SRT no tempo do clipe", () => {
+    const caps = chunksToCaptions([{ text: "a polícia tá chegando então acelera agora mesmo antes que seja tarde demais", start: 100, end: 106 }]);
+    expect(caps.length).toBeGreaterThan(1);
+    expect(caps.every((c) => c.text.split(" ").length <= 7)).toBe(true);
+    const srt = toSrt(caps, [seg(98, 110)], "orig");
+    expect(srt).toMatch(/00:00:02,000 -->/);
+  });
+});
+
+describe("aprendizado com o canal", () => {
+  it("só ajusta pesos com amostra real suficiente e no máximo ±20%", () => {
+    const v = (title: string, views: number) => ({ id: title, title, description: "", tags: [], publishedAt: "", durationSec: 40, views, likes: 0, comments: 0, avgViewPct: null, minutesWatched: null, subscribersGained: null });
+    const perf = analyzePerformance([v("Fuga da polícia #1", 9000), v("Perseguição insana", 12000), v("fuga absurda", 8000), v("Passeio de barco", 500), v("Explorando o mapa", 400), v("Explosão", 1000)]);
+    const chase = perf.find((p) => p.category === "perseguicao")!;
+    expect(chase.weight).toBeGreaterThan(1);
+    expect(chase.weight).toBeLessThanOrEqual(1.2);
+    expect(perf.find((p) => p.category === "explosao")?.weight).toBe(1);
+    expect(isoDuration("PT1M5S")).toBe(65);
+  });
+});
+
+describe("medidas de imagem", () => {
+  it("detecta fogo, sirene, tela preta e movimento", () => {
+    const w = 8;
+    const h = 8;
+    const fill = (r: number, g: number, b: number) => {
+      const a = new Uint8ClampedArray(w * h * 4);
+      for (let i = 0; i < w * h; i++) a.set([r, g, b, 255], i * 4);
+      return a;
+    };
+    const fire = frameStats(fill(250, 140, 40), w, h, null, null);
+    expect(fire.fire).toBeGreaterThan(0.9);
+    const black = frameStats(fill(2, 2, 2), w, h, null, null);
+    expect(black.brightness).toBeLessThan(0.05);
+    const blue = frameStats(fill(20, 40, 230), w, h, fill(2, 2, 2), black.hist);
+    expect(blue.siren).toBeGreaterThan(0.9);
+    expect(blue.motion).toBeGreaterThan(0.2);
+  });
+});
