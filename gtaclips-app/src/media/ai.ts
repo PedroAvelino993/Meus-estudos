@@ -4,6 +4,7 @@ import type { AiRequest, AiResponse } from "./ai-worker";
 import { CATEGORIES } from "../core/categories";
 import type { Category } from "../core/types";
 import { capabilities } from "./probe";
+import { lowMemory } from "./device";
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; onProgress?: (p: ModelProgress) => void };
 
@@ -54,10 +55,21 @@ function call<T>(req: Req, onProgress?: (p: ModelProgress) => void, transfer: Tr
 export async function aiDevice(): Promise<"webgpu" | "wasm"> {
   const pref = localStorage.getItem("gca:device");
   if (pref === "wasm") return "wasm";
+  if (pref === "webgpu") return (await capabilities()).webgpu ? "webgpu" : "wasm";
+  // Celulares e aparelhos com pouca memória: modelos quantizados no processador (bem menos memória)
+  if (lowMemory()) return "wasm";
   return (await capabilities()).webgpu ? "webgpu" : "wasm";
 }
 
 let clipReady: Promise<boolean> | null = null;
+
+/** Libera toda a memória da IA (fecha o worker). Usado ao fim das tarefas em aparelhos com pouca memória. */
+export function releaseAI() {
+  if (!worker || pending.size) return;
+  worker.terminate();
+  worker = null;
+  clipReady = null;
+}
 
 export function loadVision(onProgress?: (p: ModelProgress) => void): Promise<boolean> {
   if (clipReady) return clipReady;

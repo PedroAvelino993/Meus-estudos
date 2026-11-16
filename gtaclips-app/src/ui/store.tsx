@@ -7,8 +7,10 @@ import { generate } from "../core/stories";
 import { uid } from "../core/format";
 import { db, setSessionSource, sourceFor } from "../media/db";
 import { analyzeVideo } from "../media/analyze";
-import { exportClip } from "../media/export";
+import { cleanupChunks, exportClip } from "../media/export";
 import { generateCaptions } from "../media/speech";
+import { releaseAI } from "../media/ai";
+import { clearBusy, isIOS, logError, lowMemory, markBusy, takeCrashed, type BusyMark } from "../media/device";
 
 // ---------- Configurações ----------
 
@@ -22,11 +24,25 @@ export interface Settings {
   defaults: GenerateSettings;
   course: Record<string, boolean>;
   niche: string;
+  /** Lado menor do vídeo exportado. */
+  exportQuality: 1080 | 720;
 }
 
 export const DEFAULT_GEN: GenerateSettings = { mode: "historias", count: 3, duration: 60, format: "9:16", reframe: "acao", fps: 30, captions: true, captionLang: "pt", captionStyle: "viral", removeSilence: false, context: 3 };
 
-const DEFAULT_SETTINGS: Settings = { useVision: true, whisperModel: "onnx-community/whisper-base", spoken: "auto", storeSource: false, learned: {}, useLearned: true, defaults: DEFAULT_GEN, course: {}, niche: "Gameplay de GTA" };
+const DEFAULT_SETTINGS: Settings = {
+  useVision: true,
+  // Aparelhos com pouca memória começam com o modelo de fala menor
+  whisperModel: typeof navigator !== "undefined" && lowMemory() ? "onnx-community/whisper-tiny" : "onnx-community/whisper-base",
+  spoken: "auto",
+  storeSource: false,
+  learned: {},
+  useLearned: true,
+  defaults: DEFAULT_GEN,
+  course: {},
+  niche: "Gameplay de GTA",
+  exportQuality: 1080,
+};
 
 function loadSettings(): Settings {
   try {
@@ -75,6 +91,9 @@ interface Ctx {
   startCaptions: (project: Project, clipId: string, opts: { target: string }) => string;
   toast: (text: string, bad?: boolean) => void;
   toasts: { id: number; text: string; bad?: boolean }[];
+  /** Tarefas interrompidas porque o navegador fechou a página (geralmente falta de memória). */
+  crashed: { marks: BusyMark[]; changes: string[] } | null;
+  dismissCrash: () => void;
 }
 
 const AppCtx = createContext<Ctx | null>(null);
@@ -104,6 +123,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settings, setSettingsState] = useState<Settings>(loadSettings);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [toasts, setToasts] = useState<{ id: number; text: string; bad?: boolean }[]>([]);
+  const [crashed, setCrashed] = useState<{ marks: BusyMark[]; changes: string[] } | null>(null);
   const controllers = useRef(new Map<string, AbortController>());
   const tid = useRef(1);
 
@@ -120,7 +140,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    reload().catch(() => toast("Não foi possível abrir o banco de dados do navegador.", true));
+    (async () => {
+      // Recuperação: se a página foi fechada no meio de uma tarefa, corrige o projeto e deixa o app mais leve
+      const marks = takeCrashed();
+      // Blocos temporários de exportações que não terminaram (nenhuma está rodando ao abrir o app)
+      db.clearChunks().catch(() => undefined);
+      const list = await db.listProjects();
+      const changes: string[] = [];
+      for (const p of list) {
+        if (p.status === "analisando") await db.putProject({ ...p, status: "erro", error: "A análise foi interrompida porque o navegador fechou a página (geralmente por falta de memória). Toque em «Tentar de novo»." });
+      }
+      if (marks.length) {
+        for (const m of marks) logError(`fechamento forçado durante ${m.kind}`, new Error(JSON.stringify(m.detail)));
+        const cur = loadSettings();
+        const next = { ...cur };
+        const crashCount = Number(localStorage.getItem("gca:crashes") ?? "0") + 1;
+        localStorage.setItem("gca:crashes", String(crashCount));
+        localStorage.setItem("gca:safe", "1");
+        changes.push("Modo leve ativado: a IA passa a usar modelos menores, no processador.");
+        if (marks.some((m) => m.kind === "analise") && cur.useVision && (crashCount >= 2 || marks.some((m) => m.detail.device === "wasm"))) {
+          next.useVision = false;
+          changes.push("IA de visão desligada (a análise usa só imagem e som, que gasta bem menos memória). Você pode religar em Configurações.");
+        }
+        if (marks.some((m) => m.kind === "exportacao") && cur.exportQuality === 1080) {
+          next.exportQuality = 720;
+          changes.push("Exportação em 720p (gasta menos da metade da memória). Dá para voltar a 1080p em Configurações.");
+        }
+        if (marks.some((m) => m.kind === "legendas")) {
+          next.whisperModel = "onnx-community/whisper-tiny";
+          changes.push("Legendas com o modelo de fala menor (tiny).");
+        }
+        if (marks.some((m) => m.kind === "analise") && cur.storeSource && isIOS()) {
+          next.storeSource = false;
+          changes.push("Cópia do vídeo no aparelho desligada (vídeos grandes estouram a memória do Safari).");
+        }
+        localStorage.setItem("gca:settings", JSON.stringify(next));
+        setSettingsState(next);
+        setCrashed({ marks, changes });
+      }
+      await reload();
+    })().catch((e) => {
+      logError("abrir banco", e);
+      toast("Não foi possível abrir o banco de dados do navegador.", true);
+    });
   }, [reload, toast]);
 
   const saveProject = useCallback(
@@ -183,16 +245,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSessionSource(project.id, file);
       (async () => {
         const release = await keepAwake();
+        const extra: string[] = [];
         try {
-          let p: Project = { ...project, status: "analisando" };
+          let p: Project = { ...project, status: "analisando", error: undefined };
           await saveProject(p);
           if (settingsRef.current.storeSource) {
             updateJob(id, { detail: "Guardando uma cópia do vídeo no aparelho…" });
-            await db.putSource(project.id, file);
-            p = { ...p, source: { ...p.source, stored: true } };
+            try {
+              await db.putSource(project.id, file);
+              p = { ...p, source: { ...p.source, stored: true } };
+            } catch (e) {
+              // Sem espaço ou limite do navegador: segue sem a cópia (não derruba a análise)
+              logError("guardar cópia", e);
+              extra.push("Não deu para guardar a cópia do vídeo neste aparelho (falta de espaço); para exportar depois, selecione o arquivo de novo.");
+            }
           }
           const s = settingsRef.current;
-          const { analysis, thumbs } = await analyzeVideo(file, project.source.duration, {
+          markBusy(id, { kind: "analise", projectId: project.id, label: project.name, at: Date.now(), detail: { vision: s.useVision, device: localStorage.getItem("gca:safe") === "1" || lowMemory() ? "wasm" : "auto", size: project.source.size, dur: project.source.duration, res: `${project.source.width}x${project.source.height}`, codec: project.source.videoCodec } });
+          const { analysis, thumbs, notes } = await analyzeVideo(file, project.source.duration, {
             useVision: s.useVision,
             learned: s.useLearned ? s.learned : {},
             signal: ctrl.signal,
@@ -204,16 +274,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
           await db.putThumbs(project.id, thumbs);
           const gen = generate(analysis.moments, buildTimeline(analysis.samples, analysis.audio, project.source.duration).intensity, p.settings, project.source.duration);
-          p = { ...p, status: "analisado", analysis, clips: gen.clips, notes: gen.notes };
+          p = { ...p, status: "analisado", analysis, clips: gen.clips, notes: [...extra, ...notes, ...gen.notes] };
           await saveProject(p);
           finishJob(id);
+          for (const n of [...extra, ...notes]) toast(n);
           toast(`Análise concluída: ${analysis.moments.filter((m) => !m.dead).length} momentos e ${gen.clips.length} clipe(s) prontos para revisar.`);
         } catch (e) {
+          logError("análise", e);
           finishJob(id, e);
           const cur = await db.getProject(project.id);
           if (cur) await saveProject({ ...cur, status: e instanceof DOMException && e.name === "AbortError" ? "novo" : "erro", error: e instanceof Error ? e.message : String(e) });
           if (!(e instanceof DOMException && e.name === "AbortError")) toast(`Falha na análise: ${e instanceof Error ? e.message : e}`, true);
         } finally {
+          clearBusy(id);
+          if (lowMemory()) releaseAI();
           release();
         }
       })();
@@ -245,22 +319,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
         try {
           const file = await sourceFor(project.id);
           if (!file) throw new Error("O vídeo original não está disponível nesta sessão. Abra o projeto e selecione o arquivo de novo.");
+          // Sempre a versão salva mais recente (inclui as últimas edições)
+          const fresh = (await db.getProject(project.id)) ?? project;
+          // Memória de IA liberada antes de exportar (em aparelhos com pouca memória)
+          if (lowMemory()) releaseAI();
           for (let i = 0; i < clipIds.length; i++) {
-            const clip = project.clips.find((c) => c.id === clipIds[i]);
+            const clip = fresh.clips.find((c) => c.id === clipIds[i]);
             if (!clip) continue;
-            const { blob, record } = await exportClip(file, clip, project.analysis, project.id, project.source.fps, {
+            const short = settingsRef.current.exportQuality;
+            markBusy(id, { kind: "exportacao", projectId: project.id, label: clip.title, at: Date.now(), detail: { short, format: clip.format, fps: clip.fps, seconds: clip.segments.reduce((a, s) => a + s.end - s.start, 0), res: `${project.source.width}x${project.source.height}`, codec: project.source.videoCodec } });
+            const { blob, record } = await exportClip(file, clip, fresh.analysis, project.id, project.source.fps, {
+              short,
               signal: ctrl.signal,
               onProgress: (p) => updateJob(id, { value: (i + p.value) / clipIds.length, detail: `${clipIds.length > 1 ? `Clipe ${i + 1} de ${clipIds.length}: ` : ""}${p.detail}` }),
             });
-            await db.putExport(record, blob);
+            try {
+              await db.putExport(record, blob);
+              await cleanupChunks();
+            } catch (e) {
+              logError("salvar exportação", e);
+              throw new Error("O vídeo ficou pronto, mas não há espaço para guardá-lo no navegador. Apague exportações antigas em Configurações → Armazenamento e tente de novo.");
+            }
           }
           setExports(await db.listExports());
           finishJob(id);
           toast(clipIds.length > 1 ? "Exportação concluída! Os arquivos estão no histórico." : "Exportação concluída! O MP4 está pronto para baixar.");
         } catch (e) {
+          logError("exportação", e);
           finishJob(id, e);
           if (!(e instanceof DOMException && e.name === "AbortError")) toast(`Falha na exportação: ${e instanceof Error ? e.message : e}`, true);
         } finally {
+          clearBusy(id);
           release();
         }
       })();
@@ -279,6 +368,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const file = await sourceFor(project.id);
           if (!file) throw new Error("O vídeo original não está disponível nesta sessão. Abra o projeto e selecione o arquivo de novo.");
           const s = settingsRef.current;
+          markBusy(id, { kind: "legendas", projectId: project.id, label: clip.title, at: Date.now(), detail: { model: s.whisperModel } });
           const res = await generateCaptions(file, clip.segments, { model: s.whisperModel, spoken: s.spoken, target: opts.target, onProgress: (p) => updateJob(id, { value: p.value, detail: p.detail }) });
           const cur = (await db.getProject(project.id)) ?? project;
           const next: Project = { ...cur, clips: cur.clips.map((c) => (c.id === cid ? { ...c, captions: res.captions, captionLang: opts.target, captionsOn: true, spokenLang: res.spokenLang ?? undefined, updatedAt: Date.now() } : c)) };
@@ -287,9 +377,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           toast(res.captions.length ? `${res.captions.length} legendas criadas${res.spokenLang ? ` (fala em ${res.spokenLang.toUpperCase()})` : ""}.` : res.notes[0] ?? "Nenhuma fala encontrada.");
           for (const n of res.notes.slice(1)) toast(n);
         } catch (e) {
+          logError("legendas", e);
           finishJob(id, e);
           toast(`Falha nas legendas: ${e instanceof Error ? e.message : e}`, true);
         } finally {
+          clearBusy(id);
+          if (lowMemory()) releaseAI();
           release();
         }
       })();
@@ -300,10 +393,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const cancelJob = useCallback((id: string) => controllers.current.get(id)?.abort(), []);
   const dismissJob = useCallback((id: string) => setJobs((js) => js.filter((j) => j.id !== id)), []);
+  const dismissCrash = useCallback(() => setCrashed(null), []);
 
   const value = useMemo<Ctx>(
-    () => ({ tab, go, projectId, clipId, projects, exports, reload, saveProject, deleteProject, settings, setSettings, jobs, cancelJob, dismissJob, startAnalysis, regenerate, startExport, startCaptions, toast, toasts }),
-    [tab, go, projectId, clipId, projects, exports, reload, saveProject, deleteProject, settings, setSettings, jobs, cancelJob, dismissJob, startAnalysis, regenerate, startExport, startCaptions, toast, toasts],
+    () => ({ tab, go, projectId, clipId, projects, exports, reload, saveProject, deleteProject, settings, setSettings, jobs, cancelJob, dismissJob, startAnalysis, regenerate, startExport, startCaptions, toast, toasts, crashed, dismissCrash }),
+    [crashed, dismissCrash, tab, go, projectId, clipId, projects, exports, reload, saveProject, deleteProject, settings, setSettings, jobs, cancelJob, dismissJob, startAnalysis, regenerate, startExport, startCaptions, toast, toasts],
   );
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
 }

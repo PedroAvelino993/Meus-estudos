@@ -4,6 +4,11 @@ import "@fontsource-variable/inter/index.css";
 import "@fontsource/anton/400.css";
 import "./styles/app.css";
 import App from "./App";
+import { logError } from "./media/device";
+
+// Erros inesperados ficam no registro de diagnóstico (Configurações → Diagnóstico)
+window.addEventListener("error", (e) => logError("erro na página", e.error ?? e.message));
+window.addEventListener("unhandledrejection", (e) => logError("promessa sem tratamento", e.reason));
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

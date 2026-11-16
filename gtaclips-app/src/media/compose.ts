@@ -51,6 +51,8 @@ export interface FrameState {
 export interface ComposeContext {
   clip: Clip;
   path: { t: number; x: number }[];
+  /** Prévia leve (celulares): desfoque barato em vez do filtro, que pesa muito. */
+  fast?: boolean;
 }
 
 /** Retângulo do original que vai para a tela (recorte), conforme o modo de enquadramento. */
@@ -86,7 +88,7 @@ export function drawFrame(ctx: Ctx2D, W: number, H: number, source: CanvasImageS
     const cover = Math.max(W / sw, H / sh);
     const bw = sw * cover;
     const bh = sh * cover;
-    if (filterSupported) {
+    if (filterSupported && !c.fast) {
       ctx.filter = "blur(28px) brightness(0.55)";
       ctx.drawImage(source, (W - bw) / 2, (H - bh) / 2, bw, bh);
       ctx.filter = "none";

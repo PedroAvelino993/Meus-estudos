@@ -4,7 +4,7 @@
 import type { ExportRecord, Project } from "../core/types";
 
 const DB = "gta-clips-ai";
-const VERSION = 1;
+const VERSION = 2;
 
 let dbp: Promise<IDBDatabase> | null = null;
 
@@ -19,6 +19,8 @@ function open(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains("sources")) db.createObjectStore("sources");
       if (!db.objectStoreNames.contains("exports")) db.createObjectStore("exports", { keyPath: "id" });
       if (!db.objectStoreNames.contains("exportFiles")) db.createObjectStore("exportFiles");
+      // Blocos de uma exportação em andamento (gravados no disco, não na memória)
+      if (!db.objectStoreNames.contains("chunks")) db.createObjectStore("chunks");
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -60,6 +62,10 @@ export const db = {
     await tx("exportFiles", "readwrite", (s) => s.put(blob, rec.id));
     await tx("exports", "readwrite", (s) => s.put(rec));
   },
+  putChunk: (job: string, idx: number, blob: Blob) => tx("chunks", "readwrite", (s) => s.put(blob, `${job}:${String(idx).padStart(6, "0")}`)),
+  getChunks: (job: string) => tx<Blob[]>("chunks", "readonly", (s) => s.getAll(IDBKeyRange.bound(`${job}:`, `${job}:\uffff`)) as IDBRequest<Blob[]>),
+  deleteChunks: (job: string) => tx("chunks", "readwrite", (s) => s.delete(IDBKeyRange.bound(`${job}:`, `${job}:\uffff`))),
+  clearChunks: () => tx("chunks", "readwrite", (s) => s.clear()),
   getExportFile: (id: string) => tx<Blob | undefined>("exportFiles", "readonly", (s) => s.get(id)),
   deleteExport: async (id: string) => {
     await tx("exportFiles", "readwrite", (s) => s.delete(id));

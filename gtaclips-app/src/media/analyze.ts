@@ -7,6 +7,7 @@ import { frameStats, normalizeEnvelope } from "../core/features";
 import { buildMoments, buildTimeline, deadSeconds } from "../core/moments";
 import { openInput } from "./probe";
 import { classifyFrames, loadVision, type ModelProgress } from "./ai";
+import { breathe, guarded, withTimeout } from "./device";
 
 export interface AnalyzeProgress {
   phase: "preparando" | "modelo" | "imagens" | "som" | "momentos";
@@ -56,25 +57,42 @@ async function sampleTimes(sink: EncodedPacketSink, duration: number, signal?: A
 export interface AnalyzeResult {
   analysis: Analysis;
   thumbs: { t: number; blob: Blob }[];
+  notes: string[];
 }
 
 export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOptions): Promise<AnalyzeResult> {
   const started = performance.now();
   const report = (p: AnalyzeProgress) => opts.onProgress?.(p);
   let vision = opts.useVision;
+  const notes: string[] = [];
   if (vision) {
     report({ phase: "modelo", value: 0, detail: "Baixando o modelo de visão (uma vez só)…" });
     const files = new Map<string, ModelProgress>();
+    // Se o download/carregamento ficar 2 minutos sem nenhum progresso, desiste e segue sem a IA de visão
+    let lastProgress = Date.now();
+    let watch: ReturnType<typeof setInterval> | undefined;
+    const stalled = new Promise<never>((_, reject) => {
+      watch = setInterval(() => {
+        if (Date.now() - lastProgress > 120_000) reject(new Error("o modelo parou de carregar"));
+      }, 5000);
+    });
     try {
-      await loadVision((p) => {
-        if (p.file) files.set(p.file, p);
-        const tot = [...files.values()].reduce((a, f) => a + (f.total || 0), 0);
-        const got = [...files.values()].reduce((a, f) => a + (f.loaded || 0), 0);
-        report({ phase: "modelo", value: tot ? got / tot : 0, detail: `Modelo de visão: ${tot ? Math.round((got / 1e6) * 10) / 10 : 0} de ${Math.round((tot / 1e6) * 10) / 10} MB` });
-      });
+      await Promise.race([
+        loadVision((p) => {
+          lastProgress = Date.now();
+          if (p.file) files.set(p.file, p);
+          const tot = [...files.values()].reduce((a, f) => a + (f.total || 0), 0);
+          const got = [...files.values()].reduce((a, f) => a + (f.loaded || 0), 0);
+          report({ phase: "modelo", value: tot ? got / tot : 0, detail: `Modelo de visão: ${tot ? Math.round((got / 1e6) * 10) / 10 : 0} de ${Math.round((tot / 1e6) * 10) / 10} MB` });
+        }),
+        stalled,
+      ]);
     } catch (e) {
       vision = false;
-      report({ phase: "modelo", value: 1, detail: `Não foi possível carregar o modelo de visão (${e instanceof Error ? e.message : e}). Seguindo com a análise básica.` });
+      notes.push(`A IA de visão não carregou neste aparelho (${e instanceof Error ? e.message : e}); a análise usou só imagem e som.`);
+      report({ phase: "modelo", value: 1, detail: "Seguindo com a análise básica (imagem e som)." });
+    } finally {
+      clearInterval(watch);
     }
   }
   checkAbort(opts.signal);
@@ -96,19 +114,25 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
     let prevHist: number[] | null = null;
     let batch: { idx: number; image: ImageData }[] = [];
     const inflight: Promise<void>[] = [];
+    let visionFailed: string | null = null;
     const flush = () => {
-      if (!batch.length) return;
+      if (!batch.length || visionFailed) return;
       const b = batch;
       batch = [];
       inflight.push(
-        classifyFrames(b.map((x) => x.image)).then((res) => {
-          res.forEach((labels, k) => (samples[b[k].idx].labels = labels));
-        }),
+        withTimeout(classifyFrames(b.map((x) => x.image)), 120_000, "A IA de visão")
+          .then((res) => {
+            res.forEach((labels, k) => (samples[b[k].idx].labels = labels));
+          })
+          .catch((e) => {
+            // Falhou ou ficou lenta demais: segue sem ela (sem travar a análise)
+            visionFailed = e instanceof Error ? e.message : String(e);
+          }),
       );
     };
     let lastThumb = -Infinity;
     let i = 0;
-    for await (const wrapped of sink.canvasesAtTimestamps(times)) {
+    for await (const wrapped of guarded(sink.canvasesAtTimestamps(times), 60_000, "O decodificador de vídeo")) {
       checkAbort(opts.signal);
       const t = times[i++];
       if (!wrapped) continue;
@@ -124,7 +148,8 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
         thumbs.push({ t, blob: await thumbCanvas.convertToBlob({ type: "image/jpeg", quality: 0.62 }) });
         lastThumb = t;
       }
-      if (vision) {
+      if (i % 4 === 0) await breathe();
+      if (vision && !visionFailed) {
         batch.push({ idx, image: new ImageData(new Uint8ClampedArray(img.data), W, H) });
         if (batch.length >= 8) flush();
         // No máximo 2 lotes esperando o modelo (memória sob controle)
@@ -134,6 +159,12 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
     }
     flush();
     for (const p of inflight) await p;
+    if (visionFailed) {
+      // Mistura de quadros com e sem IA daria notas incoerentes: usa a análise básica em tudo
+      for (const smp of samples) delete smp.labels;
+      vision = false;
+      notes.push(`A IA de visão foi desligada no meio da análise (${visionFailed}); o resultado usa só imagem e som.`);
+    }
     report({ phase: "imagens", value: 1, detail: `${samples.length} quadros analisados` });
 
     // ---------- Som ----------
@@ -147,7 +178,9 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
       let count = 0;
       let windowSize = 0;
       let lastReport = 0;
-      for await (const { buffer, timestamp } of asink.buffers(0, duration)) {
+      let nb = 0;
+      for await (const { buffer, timestamp } of guarded(asink.buffers(0, duration), 60_000, "O decodificador de áudio")) {
+        if (++nb % 20 === 0) await breathe();
         checkAbort(opts.signal);
         if (!windowSize) windowSize = Math.round(buffer.sampleRate / rate);
         const chans = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
@@ -174,7 +207,7 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
     const moments = buildMoments(tl, opts.learned);
     const analysis: Analysis = { version: 1, mode: vision ? "ia" : "basica", samples, audio, moments, deadSeconds: deadSeconds(moments), createdAt: Date.now(), elapsedMs: Math.round(performance.now() - started) };
     report({ phase: "momentos", value: 1, detail: `${moments.filter((m) => !m.dead).length} momentos encontrados` });
-    return { analysis, thumbs };
+    return { analysis, thumbs, notes };
   } finally {
     input.dispose();
   }

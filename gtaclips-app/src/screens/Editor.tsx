@@ -7,7 +7,9 @@ import { actionPath, insertSegment, moveSegment, outToSource, removeSegment, seg
 import { CAPTION_STYLES, FONTS, LANGUAGES, captionText, defaultStyle, languageName, toSrt } from "../core/captions";
 import { category } from "../core/categories";
 import { fmtDur, fmtTime, safeName, uid } from "../core/format";
-import { sourceFor } from "../media/db";
+import { setSessionSource, sourceFor } from "../media/db";
+import { lowMemory } from "../media/device";
+import { capabilities, type Capabilities } from "../media/probe";
 import { drawFrame, ensureFonts, outputSize, type FrameState } from "../media/compose";
 import { effectiveSegments } from "../media/export";
 import { downloadBlob } from "../media/files";
@@ -42,8 +44,10 @@ function ClipEditor({ project, clip: initial }: { project: Project; clip: Clip }
   const thumbs = useThumbs(project.id);
   const saveTimer = useRef<number | undefined>(undefined);
 
+  const [caps, setCaps] = useState<Capabilities | null>(null);
   useEffect(() => {
     sourceFor(project.id).then((f) => setFile(f));
+    capabilities().then(setCaps);
   }, [project.id]);
 
   // Salva automaticamente (com pequeno atraso para não gravar a cada movimento do controle)
@@ -66,6 +70,15 @@ function ClipEditor({ project, clip: initial }: { project: Project; clip: Clip }
 
   const segs = useMemo(() => effectiveSegments(clip, project.analysis), [clip, project.analysis]);
   const selected = clip.segments.find((s) => s.id === sel) ?? clip.segments[0];
+  const relink = useRef<HTMLInputElement>(null);
+  /** Salva a edição na hora (sem esperar o atraso do salvamento automático) e exporta. */
+  const exportNow = async () => {
+    window.clearTimeout(saveTimer.current);
+    const cur = projects.find((p) => p.id === project.id) ?? project;
+    const updated = updateClip(cur, clip);
+    await saveProject(updated);
+    startExport(updated, [clip.id]);
+  };
   const capJob = jobs.find((j) => j.clipId === clip.id && j.kind === "legendas" && j.status === "rodando");
   const exporting = jobs.find((j) => j.projectId === project.id && j.kind === "exportacao" && j.status === "rodando");
 
@@ -85,7 +98,7 @@ function ClipEditor({ project, clip: initial }: { project: Project; clip: Clip }
       </div>
       <div className="row wrap between">
         <input className="input display" style={{ fontSize: 22, maxWidth: 640, background: "transparent", border: "none", padding: 0 }} value={clip.title} onChange={(e) => change({ ...clip, title: e.target.value })} aria-label="Título do clipe" />
-        <button className="btn primary lg" disabled={!file || !!exporting} onClick={() => startExport(project, [clip.id])}>
+        <button className="btn primary lg" disabled={!file || !!exporting} onClick={exportNow}>
           <Download size={18} /> EXPORTAR VÍDEO
         </button>
       </div>
@@ -95,9 +108,32 @@ function ClipEditor({ project, clip: initial }: { project: Project; clip: Clip }
           <Bar value={exporting.value} anim />
         </div>
       )}
+      {caps && project.source.audioCodec && !caps.audioCodec && (
+        <div className="banner red small">Este navegador não consegue codificar áudio: o MP4 sairia sem som. Atualize o sistema/navegador (iOS 26 ou mais novo, ou Chrome/Edge atualizado).</div>
+      )}
       {file === null && (
         <div className="banner amber small">
-          O vídeo original não está aberto nesta sessão. Volte ao projeto e selecione o arquivo de novo para assistir e exportar.
+          <div className="grow">
+            O vídeo original não está aberto nesta sessão (o navegador não guarda acesso a arquivos). Selecione o mesmo arquivo para assistir e exportar.
+            <div style={{ marginTop: 8 }}>
+              <button className="btn sm primary" onClick={() => relink.current?.click()}>
+                Selecionar o vídeo original
+              </button>
+              <input
+                ref={relink}
+                type="file"
+                accept="video/*,.mkv,.mov"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  if (f.size !== project.source.size && !confirm("Este arquivo parece diferente do original. Usar mesmo assim?")) return;
+                  setSessionSource(project.id, f);
+                  setFile(f);
+                }}
+              />
+            </div>
+          </div>
         </div>
       )}
       <div className="grid" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.15fr)", alignItems: "start" }} data-editor>
@@ -142,7 +178,8 @@ function Preview({ clip, segs, file, project }: { clip: Clip; segs: Segment[]; f
   const [url, setUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [outT, setOutT] = useState(0);
-  const st = useRef({ seg: 0, outT: 0, playing: false });
+  const st = useRef({ seg: 0, outT: 0, playing: false, dirty: true, lastUi: 0 });
+  const fast = useMemo(() => lowMemory(), []);
   const path = useMemo(() => (project.analysis ? actionPath(project.analysis.samples) : []), [project.analysis]);
   const total = totalDuration(segs);
   const offsets = useMemo(() => segmentOffsets(segs), [segs]);
@@ -163,8 +200,13 @@ function Preview({ clip, segs, file, project }: { clip: Clip; segs: Segment[]; f
     const i = Math.min(st.current.seg, segs.length - 1);
     const s = segs[i];
     const fs: FrameState = { outT: st.current.outT, srcT: v.currentTime, seg: s, segOut: offsets[i], segDur: s.end - s.start, isFirst: i === 0, isLast: i === segs.length - 1 };
-    drawFrame(c.getContext("2d")!, width, height, v, v.videoWidth, v.videoHeight, { clip, path }, fs);
-  }, [segs, offsets, width, height, clip, path]);
+    drawFrame(c.getContext("2d")!, width, height, v, v.videoWidth, v.videoHeight, { clip, path, fast }, fs);
+    st.current.dirty = false;
+  }, [segs, offsets, width, height, clip, path, fast]);
+  // Qualquer mudança no clipe pede um novo desenho
+  useEffect(() => {
+    st.current.dirty = true;
+  }, [draw]);
 
   const seek = useCallback(
     (t: number) => {
@@ -173,6 +215,7 @@ function Preview({ clip, segs, file, project }: { clip: Clip; segs: Segment[]; f
       if (!v || !pos) return;
       st.current.seg = pos.index;
       st.current.outT = t;
+      st.current.dirty = true;
       v.currentTime = pos.src;
       v.volume = Math.min(1, clip.volume * segs[pos.index].volume);
       setOutT(t);
@@ -201,10 +244,16 @@ function Preview({ clip, segs, file, project }: { clip: Clip; segs: Segment[]; f
         }
         if (s) {
           st.current.outT = offsets[st.current.seg] + Math.max(0, v.currentTime - segs[st.current.seg].start);
-          setOutT(st.current.outT);
+          // A barra de tempo não precisa de 60 atualizações por segundo
+          const now = performance.now();
+          if (now - st.current.lastUi > 120) {
+            st.current.lastUi = now;
+            setOutT(st.current.outT);
+          }
         }
       }
-      draw();
+      // Parado: só redesenha quando algo mudou (economiza bateria e não trava o celular)
+      if (st.current.playing || st.current.dirty) draw();
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -237,7 +286,7 @@ function Preview({ clip, segs, file, project }: { clip: Clip; segs: Segment[]; f
         <canvas ref={canvas} width={width} height={height} style={{ width: "100%", height: "100%" }} onClick={toggle} />
         {!file && <div className="small muted" style={{ position: "absolute" }}>Sem o vídeo original</div>}
       </div>
-      {url && <video ref={video} src={url} playsInline preload="auto" muted={false} style={{ position: "absolute", width: 2, height: 2, opacity: 0.01, pointerEvents: "none", left: 0, top: 0 }} onSeeked={draw} onLoadedData={draw} onLoadedMetadata={() => seek(st.current.outT)} />}
+      {url && <video ref={video} src={url} playsInline preload="auto" muted={false} style={{ position: "absolute", width: 2, height: 2, opacity: 0.01, pointerEvents: "none", left: 0, top: 0 }} onSeeked={() => { st.current.dirty = true; }} onLoadedData={() => { st.current.dirty = true; }} onLoadedMetadata={() => seek(st.current.outT)} />}
       <div className="row" style={{ marginTop: 10 }}>
         <button className="btn sm" onClick={() => seek(0)} aria-label="Voltar ao início" disabled={!file}>
           <SkipBack size={15} />

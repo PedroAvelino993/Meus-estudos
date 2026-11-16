@@ -1,7 +1,8 @@
 // Configurações: IA, chaves de API (com instruções), armazenamento e compatibilidade.
 
 import { useEffect, useState } from "react";
-import { Brain, Cpu, ExternalLink, HardDrive, KeyRound, Trash2, Youtube } from "lucide-react";
+import { Brain, Bug, Copy, Cpu, ExternalLink, Feather, HardDrive, KeyRound, Trash2, Youtube } from "lucide-react";
+import { clearErrorLog, deviceSummary, errorLog, lowMemory } from "../media/device";
 import { WHISPER_MODELS } from "../media/ai";
 import { capabilities, type Capabilities } from "../media/probe";
 import { claudeAvailable, claudeKey, setClaudeKey, testClaude } from "../media/claude";
@@ -20,6 +21,8 @@ export default function Settings() {
   const [testing, setTesting] = useState(false);
   const [storage, setStorage] = useState<{ usage: number; quota: number; persisted: boolean } | null>(null);
   const [device, setDevice] = useState(localStorage.getItem("gca:device") ?? "auto");
+  const [safe, setSafe] = useState(localStorage.getItem("gca:safe") === "1");
+  const [errors, setErrors] = useState(errorLog);
   useEffect(() => {
     capabilities().then(setCaps);
     storageEstimate().then(setStorage);
@@ -42,13 +45,14 @@ export default function Settings() {
                 value={device}
                 onChange={(e) => {
                   setDevice(e.target.value);
-                  if (e.target.value === "wasm") localStorage.setItem("gca:device", "wasm");
-                  else localStorage.removeItem("gca:device");
+                  if (e.target.value === "auto") localStorage.removeItem("gca:device");
+                  else localStorage.setItem("gca:device", e.target.value);
                   toast("Vale a partir da próxima vez que o app abrir.");
                 }}
               >
-                <option value="auto">Automático (placa de vídeo quando disponível)</option>
-                <option value="wasm">Sempre o processador (mais compatível, mais lento)</option>
+                <option value="auto">Automático (placa de vídeo no computador, processador no celular)</option>
+                <option value="webgpu">Placa de vídeo sempre que houver (mais rápido, mais memória)</option>
+                <option value="wasm">Sempre o processador (mais compatível, menos memória)</option>
               </select>
             </label>
             <label className="field">
@@ -206,6 +210,78 @@ export default function Settings() {
                 }}
               >
                 <Trash2 size={14} /> Apagar cópias dos originais
+              </button>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Desempenho e memória" icon={<Feather size={16} />}>
+          <div className="stack small">
+            <div>
+              <div className="muted" style={{ marginBottom: 6 }}>
+                Qualidade da exportação
+              </div>
+              <div className="seg">
+                {([1080, 720] as const).map((q) => (
+                  <button key={q} className={settings.exportQuality === q ? "on" : ""} onClick={() => setSettings({ exportQuality: q })}>
+                    {q === 1080 ? "1080p (recomendado)" : "720p (menos memória)"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="row">
+              <input
+                type="checkbox"
+                checked={safe}
+                onChange={(e) => {
+                  setSafe(e.target.checked);
+                  if (e.target.checked) localStorage.setItem("gca:safe", "1");
+                  else localStorage.removeItem("gca:safe");
+                  toast("Vale a partir da próxima vez que o app abrir.");
+                }}
+              />
+              Modo leve: modelos de IA menores, no processador, e prévia mais simples (para celulares e aparelhos com pouca memória)
+            </label>
+            <p className="tiny faint">{lowMemory() ? "Este aparelho está usando o modo leve." : "Este aparelho está usando o modo completo."} O app liga o modo leve sozinho se o navegador fechar a página por falta de memória.</p>
+          </div>
+        </Card>
+
+        <Card title="Diagnóstico" icon={<Bug size={16} />}>
+          <div className="stack small">
+            <p className="muted">Se algo der errado, os erros ficam registrados aqui (só neste aparelho). Copie e mande para quem dá suporte ao app.</p>
+            {errors.length ? (
+              <div className="list" style={{ maxHeight: 240, overflowY: "auto" }}>
+                {errors.map((e, i) => (
+                  <div key={i} className="item tiny">
+                    <b>{new Date(e.at).toLocaleString("pt-BR")} · {e.where}</b>
+                    <div>{e.message}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="tiny faint">Nenhum erro registrado.</p>
+            )}
+            <div className="row wrap">
+              <button
+                className="btn sm"
+                onClick={() => {
+                  const txt = [`GTA Clips AI — diagnóstico (${new Date().toLocaleString("pt-BR")})`, deviceSummary(), `Modo leve: ${lowMemory() ? "sim" : "não"} · IA de visão: ${settings.useVision ? "sim" : "não"} · exportação ${settings.exportQuality}p`, caps ? `WebCodecs ${caps.webcodecs} · vídeo ${caps.videoCodec} · áudio ${caps.audioCodec} · WebGPU ${caps.webgpu}` : "", ...errors.map((e) => `${new Date(e.at).toISOString()} [${e.where}] ${e.message}\n${e.stack ?? ""}`)].join("\n");
+                  navigator.clipboard?.writeText(txt).then(
+                    () => toast("Diagnóstico copiado."),
+                    () => toast("Não foi possível copiar.", true),
+                  );
+                }}
+              >
+                <Copy size={14} /> Copiar diagnóstico
+              </button>
+              <button
+                className="btn sm ghost"
+                onClick={() => {
+                  clearErrorLog();
+                  setErrors([]);
+                }}
+              >
+                Limpar
               </button>
             </div>
           </div>

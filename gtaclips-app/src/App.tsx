@@ -1,4 +1,5 @@
-import { Clapperboard, FolderOpen, LayoutDashboard, Scissors, Settings as Gear, Sparkles, Youtube } from "lucide-react";
+import { AlertTriangle, Clapperboard, FolderOpen, LayoutDashboard, Scissors, Settings as Gear, Sparkles, Youtube } from "lucide-react";
+import { Modal } from "./ui/kit";
 import { AppProvider, useApp, type Tab } from "./ui/store";
 import Dashboard from "./screens/Dashboard";
 import Create from "./screens/Create";
@@ -25,7 +26,7 @@ export default function App() {
 }
 
 function Shell() {
-  const { tab, go, jobs, toasts } = useApp();
+  const { tab, go, jobs, toasts, crashed, dismissCrash } = useApp();
   const running = jobs.filter((j) => j.status === "rodando");
   const Screen = { dashboard: Dashboard, criar: Create, projetos: Projects, editor: Editor, youtube: YouTube, config: Settings }[tab];
   return (
@@ -78,6 +79,50 @@ function Shell() {
           </button>
         ))}
       </nav>
+      {crashed && (
+        <Modal title="O navegador fechou o app no meio da tarefa" onClose={dismissCrash}>
+          <div className="stack small">
+            <div className="banner amber">
+              <AlertTriangle size={18} />
+              <span>
+                Enquanto {crashed.marks.map((m) => (m.kind === "analise" ? `analisava «${m.label}»` : m.kind === "exportacao" ? `exportava «${m.label}»` : `criava legendas de «${m.label}»`)).join(" e ")}, o navegador fechou a página. Isso acontece quando o aparelho fica sem memória (vídeos longos ou em alta resolução, ou outros apps abertos).
+              </span>
+            </div>
+            <div>
+              <b>Para não acontecer de novo, ajustei:</b>
+              <ul style={{ margin: "6px 0", paddingLeft: 18 }}>
+                {crashed.changes.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <b>Dicas:</b>
+              <ul style={{ margin: "6px 0", paddingLeft: 18 }}>
+                <li>Feche outros apps e abas antes de processar.</li>
+                <li>Mantenha esta aba aberta e a tela ligada até terminar.</li>
+                <li>Prefira gravações em 1080p; vídeos em 4K usam muito mais memória.</li>
+                <li>Para exportar, selecione o vídeo original de novo no projeto.</li>
+              </ul>
+            </div>
+            <div className="row wrap">
+              <button
+                className="btn primary"
+                onClick={() => {
+                  const pid = crashed.marks[0]?.projectId;
+                  dismissCrash();
+                  go("projetos", { projectId: pid ?? "" });
+                }}
+              >
+                Abrir o projeto
+              </button>
+              <button className="btn" onClick={dismissCrash}>
+                Entendi
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.bad ? "bad" : ""}`}>
