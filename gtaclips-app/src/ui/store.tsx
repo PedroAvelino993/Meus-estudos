@@ -352,7 +352,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           setExports(await db.listExports());
           finishJob(id);
-          toast(clipIds.length > 1 ? "Exportação concluída! Os arquivos estão no histórico." : "Exportação concluída! O MP4 está pronto para baixar.");
+          toast(clipIds.length > 1 ? "Exportação concluída! Toque em «Compartilhar todos» ou em «Compartilhar» de cada clipe." : "Exportação concluída! Toque em «Compartilhar» para mandar o vídeo para fora do app.");
         } catch (e) {
           logError("exportação", e);
           finishJob(id, e);

@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clapperboard, Download, Film, GraduationCap, HardDrive, Loader2, Scissors, Sparkles, Upload, X } from "lucide-react";
 import { useApp, type Job } from "../ui/store";
 import { Bar, Card, Empty, Head, Stat, useThumbs, thumbAt } from "../ui/kit";
-import { storageEstimate, db } from "../media/db";
+import { storageEstimate } from "../media/db";
 import { capabilities, type Capabilities } from "../media/probe";
-import { downloadBlob } from "../media/files";
-import { fmtBytes, fmtDur, safeName } from "../core/format";
+import { ExportButtons } from "./Projects";
+import { fmtBytes, fmtDur } from "../core/format";
 import type { Project } from "../core/types";
 
 export default function Dashboard() {
@@ -157,20 +157,14 @@ function ExportHistory() {
                   {e.width}×{e.height} · {e.fps} FPS · {fmtDur(e.duration)} · {fmtBytes(e.size)} · {new Date(e.createdAt).toLocaleString("pt-BR")}
                 </div>
               </div>
-              <button
-                className="btn sm"
-                onClick={async () => {
-                  const b = await db.getExportFile(e.id);
-                  if (b) downloadBlob(b, `${safeName(e.title)}.mp4`);
-                }}
-              >
-                <Download size={14} /> MP4
-              </button>
+              <div className="row" style={{ gap: 6 }}>
+                <ExportButtons id={e.id} name={e.title} size={e.size} outdated={false} compact />
+              </div>
             </div>
           ))}
         </div>
       ) : (
-        <Empty>As exportações aparecem aqui, prontas para baixar de novo.</Empty>
+        <Empty>As exportações aparecem aqui, prontas para compartilhar ou baixar de novo.</Empty>
       )}
     </Card>
   );

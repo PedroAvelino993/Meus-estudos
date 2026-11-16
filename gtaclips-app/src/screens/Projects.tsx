@@ -9,7 +9,7 @@ import { seg, totalDuration } from "../core/timeline";
 import { defaultStyle } from "../core/captions";
 import { fmtBytes, fmtDur, fmtTime, safeName, uid } from "../core/format";
 import { db, setSessionSource, sourceFor } from "../media/db";
-import { downloadBlob, shareFile, zipFiles } from "../media/files";
+import { SHARE_MESSAGE, canShareFiles, downloadBlob, shareFiles, zipFiles } from "../media/files";
 import { useApp, updateClip } from "../ui/store";
 import { Bar, Card, Empty, Head, ScoreBadge, Seg, thumbAt, useThumbs } from "../ui/kit";
 import { Jobs, statusTag } from "./Dashboard";
@@ -260,6 +260,20 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
     }
   };
 
+  const share = useShare();
+  const exportedCount = p.clips.filter((c) => lastExport(c)).length;
+  const shareAll = async () => {
+    const items: { name: string; blob: Blob }[] = [];
+    for (const c of p.clips) {
+      const e = lastExport(c);
+      if (!e) continue;
+      const b = await db.getExportFile(e.id);
+      if (b) items.push({ name: `${String(items.length + 1).padStart(2, "0")}-${safeName(c.title)}.mp4`, blob: b });
+    }
+    if (!items.length) return toast("Exporte os clipes primeiro.", true);
+    await share(items, p.name);
+  };
+
   if (!p.clips.length) return <Empty>Nenhum clipe. Use «Gerar de novo» ou crie a partir de um momento.</Empty>;
   return (
     <div className="stack">
@@ -273,10 +287,19 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
         <button className="btn primary" disabled={!hasSource || exporting} onClick={() => startExport(p, p.clips.map((c) => c.id))}>
           <Download size={16} /> EXPORTAR VÍDEOS ({p.clips.length})
         </button>
+        <button className="btn" disabled={!exportedCount} onClick={shareAll} title="Envia todos os MP4 de uma vez (WhatsApp, Telegram, Drive, Galeria…)">
+          <Share2 size={16} /> Compartilhar todos{exportedCount ? ` (${exportedCount})` : ""}
+        </button>
         <button className="btn" disabled={zipping || !p.clips.some((c) => lastExport(c))} onClick={zipAll}>
           <FileArchive size={16} /> {zipping ? "Montando ZIP…" : "Baixar todos (ZIP)"}
         </button>
       </div>
+      {!exportedCount && (
+        <div className="banner small">
+          <Share2 size={16} />
+          <span>Para compartilhar ou mandar os clipes para fora do app, exporte primeiro. Depois aparece o botão «Compartilhar» em cada clipe: ele abre o menu do celular com o vídeo pronto para WhatsApp, Telegram, Drive, Galeria ou «Salvar vídeo».</span>
+        </div>
+      )}
       {p.clips.map((c, i) => {
         const d = totalDuration(c.segments);
         const e = lastExport(c);
@@ -332,10 +355,10 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
               <button className="btn sm" disabled={!hasSource || !!capJob || !p.source.audioCodec} onClick={() => startCaptions(p, c.id, { target: c.captionLang })}>
                 <Captions size={14} /> {c.captions.length ? "Refazer legendas" : "Gerar legendas"}
               </button>
-              <button className="btn sm" disabled={!hasSource || exporting} onClick={() => startExport(p, [c.id])}>
-                <Play size={14} /> Exportar MP4
-              </button>
               {e && <ExportButtons id={e.id} name={c.title} size={e.size} outdated={!!outdated} />}
+              <button className="btn sm" disabled={!hasSource || exporting} onClick={() => startExport(p, [c.id])}>
+                <Play size={14} /> {e ? (outdated ? "Exportar de novo (clipe mudou)" : "Exportar de novo") : "Exportar MP4"}
+              </button>
               <button
                 className="btn sm ghost"
                 onClick={async () => {
@@ -359,33 +382,48 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
   );
 }
 
-function ExportButtons({ id, name, size, outdated }: { id: string; name: string; size: number; outdated: boolean }) {
+/** Abre o menu de compartilhar do aparelho; se não houver, baixa o arquivo. */
+export function useShare() {
   const { toast } = useApp();
+  return async (items: { name: string; blob: Blob }[], title?: string) => {
+    const r = await shareFiles(items, title);
+    if (r === "ok" || r === "cancelado") return r;
+    if (r === "indisponivel") for (const it of items) downloadBlob(it.blob, it.name);
+    toast(SHARE_MESSAGE[r], r === "erro");
+    return r;
+  };
+}
+
+export function ExportButtons({ id, name, size, outdated, compact }: { id: string; name: string; size: number; outdated: boolean; compact?: boolean }) {
+  const { toast } = useApp();
+  const share = useShare();
   const get = async () => {
     const b = await db.getExportFile(id);
-    if (!b) toast("Arquivo não encontrado.", true);
+    if (!b) toast("Arquivo não encontrado. Exporte o clipe de novo.", true);
     return b;
   };
+  const file = `${safeName(name)}.mp4`;
   return (
     <>
       <button
-        className="btn sm"
+        className={`btn sm ${outdated ? "" : "primary"}`}
         onClick={async () => {
           const b = await get();
-          if (b) downloadBlob(b, `${safeName(name)}.mp4`);
+          if (b) await share([{ blob: b, name: file }], name);
         }}
-        title={outdated ? "O clipe mudou depois desta exportação" : ""}
+        title={canShareFiles() ? "WhatsApp, Telegram, Drive, Galeria, «Salvar vídeo»…" : "Este navegador não tem menu de compartilhar: o vídeo será baixado"}
       >
-        <Download size={14} /> Baixar MP4 ({fmtBytes(size)}){outdated ? " · antigo" : ""}
+        <Share2 size={14} /> Compartilhar{outdated ? " (versão antiga)" : ""}
       </button>
       <button
         className="btn sm"
         onClick={async () => {
           const b = await get();
-          if (b && !(await shareFile(b, `${safeName(name)}.mp4`))) toast("Compartilhar não está disponível neste navegador; use Baixar.");
+          if (b) downloadBlob(b, file);
         }}
+        title={outdated ? "O clipe mudou depois desta exportação" : ""}
       >
-        <Share2 size={14} />
+        <Download size={14} /> {compact ? "MP4" : `Baixar (${fmtBytes(size)})`}
       </button>
     </>
   );
