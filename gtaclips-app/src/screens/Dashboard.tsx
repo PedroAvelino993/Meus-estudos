@@ -158,7 +158,7 @@ function ExportHistory() {
                 </div>
               </div>
               <div className="row" style={{ gap: 6 }}>
-                <ExportButtons id={e.id} name={e.title} size={e.size} outdated={false} compact />
+                <ExportButtons rec={e} name={e.title} outdated={false} compact />
               </div>
             </div>
           ))}

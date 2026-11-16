@@ -1,6 +1,7 @@
 // Downloads, compartilhamento e ZIP com todos os clipes.
 
 import { Zip, ZipPassThrough } from "fflate";
+import { isIOS } from "./device";
 
 export function downloadBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -10,10 +11,19 @@ export function downloadBlob(blob: Blob, name: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  // Vídeos grandes demoram para começar a gravar no celular: o endereço fica válido por 5 min
+  setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
 }
 
-export type ShareResult = "ok" | "cancelado" | "indisponivel" | "toque-de-novo" | "grande-demais" | "erro";
+export type ShareResult = "ok" | "cancelado" | "indisponivel" | "toque-de-novo" | "grande-demais" | "muitos" | "erro";
+
+/** Limite do menu de compartilhar do Chrome (Android, Windows, ChromeOS): 50 MB somando os arquivos. */
+export const SHARE_LIMIT = 50 * 1024 * 1024;
+
+/** O limite de 50 MB vale para o Chrome e derivados; o Safari do iPhone não tem esse limite. */
+export function shareLimit(): number {
+  return isIOS() ? Infinity : SHARE_LIMIT;
+}
 
 type Nav = Navigator & { canShare?: (d: ShareData) => boolean };
 
@@ -34,16 +44,17 @@ export function canShareFiles(): boolean {
 export async function shareFiles(items: { blob: Blob; name: string }[], title?: string): Promise<ShareResult> {
   const nav = navigator as Nav;
   if (typeof nav.share !== "function") return "indisponivel";
+  if (items.reduce((a, it) => a + it.blob.size, 0) > shareLimit()) return "grande-demais";
   const files = items.map((it) => new File([it.blob], it.name, { type: it.blob.type || "video/mp4" }));
-  if (!nav.canShare?.({ files })) return files.length > 1 ? "grande-demais" : "indisponivel";
+  if (!nav.canShare?.({ files })) return files.length > 1 ? "muitos" : "indisponivel";
   try {
     await nav.share({ files, title: title ?? files[0].name });
     return "ok";
   } catch (e) {
     const name = e instanceof DOMException ? e.name : "";
     if (name === "AbortError") return "cancelado";
-    // Passou tempo demais desde o toque (ex.: arquivo grande demorou para carregar)
-    if (name === "NotAllowedError") return "toque-de-novo";
+    // Recusado: arquivo grande demais para o aparelho, ou passou tempo demais desde o toque
+    if (name === "NotAllowedError") return items.reduce((a, it) => a + it.blob.size, 0) > 20 * 1024 * 1024 ? "grande-demais" : "toque-de-novo";
     return "erro";
   }
 }
@@ -51,9 +62,25 @@ export async function shareFiles(items: { blob: Blob; name: string }[], title?: 
 export const SHARE_MESSAGE: Record<Exclude<ShareResult, "ok" | "cancelado">, string> = {
   indisponivel: "Este navegador não abre o menu de compartilhar com arquivos. O vídeo foi baixado; compartilhe pela galeria ou pelos arquivos do aparelho.",
   "toque-de-novo": "O arquivo terminou de carregar. Toque em Compartilhar de novo.",
-  "grande-demais": "O aparelho não aceitou tantos vídeos de uma vez. Compartilhe um por um (botão Compartilhar de cada clipe).",
+  "grande-demais": "O vídeo passa do limite de 50 MB do compartilhamento do navegador. Use «Salvar na galeria» e compartilhe pela galeria, ou crie a versão leve.",
+  muitos: "O aparelho não aceitou tantos vídeos de uma vez. Use «Salvar todos na galeria».",
   erro: "Não foi possível compartilhar agora. Tente de novo ou use Baixar.",
 };
+
+/**
+ * Salva o vídeo no aparelho para aparecer na galeria.
+ * Android/computador: baixa o MP4 (vai para Downloads, que a Galeria e o Google Fotos mostram).
+ * iPhone: abre o menu do sistema, onde «Salvar vídeo» manda direto para o app Fotos.
+ */
+export async function saveToGallery(blob: Blob, name: string): Promise<"baixado" | "menu" | "cancelado"> {
+  if (isIOS()) {
+    const r = await shareFiles([{ blob, name }]);
+    if (r === "ok") return "menu";
+    if (r === "cancelado") return "cancelado";
+  }
+  downloadBlob(blob, name);
+  return "baixado";
+}
 
 /** Compatibilidade com o código antigo. */
 export async function shareFile(blob: Blob, name: string): Promise<boolean> {

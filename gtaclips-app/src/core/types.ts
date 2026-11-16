@@ -251,4 +251,6 @@ export interface ExportRecord {
   videoCodec: string;
   audioCodec: string | null;
   mime: string;
+  /** Versão leve (720p, menos de 45 MB) feita para caber no compartilhamento do celular. */
+  light?: boolean;
 }

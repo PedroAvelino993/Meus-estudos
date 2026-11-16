@@ -88,7 +88,7 @@ interface Ctx {
   dismissJob: (id: string) => void;
   startAnalysis: (project: Project, file: Blob) => string;
   regenerate: (project: Project, settings: GenerateSettings) => Promise<Project>;
-  startExport: (project: Project, clipIds: string[]) => string;
+  startExport: (project: Project, clipIds: string[], opts?: { light?: boolean }) => string;
   startCaptions: (project: Project, clipId: string, opts: { target: string }) => string;
   toast: (text: string, bad?: boolean) => void;
   toasts: { id: number; text: string; bad?: boolean }[];
@@ -317,8 +317,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const startExport = useCallback(
-    (project: Project, clipIds: string[]) => {
-      const [id, ctrl] = newJob({ kind: "exportacao", projectId: project.id, label: clipIds.length > 1 ? `Exportando ${clipIds.length} clipes` : `Exportando «${project.clips.find((c) => c.id === clipIds[0])?.title}»` });
+    (project: Project, clipIds: string[], eopts: { light?: boolean } = {}) => {
+      const light = !!eopts.light;
+      const [id, ctrl] = newJob({ kind: "exportacao", projectId: project.id, label: light ? `Versão leve de «${project.clips.find((c) => c.id === clipIds[0])?.title}»` : clipIds.length > 1 ? `Exportando ${clipIds.length} clipes` : `Exportando «${project.clips.find((c) => c.id === clipIds[0])?.title}»` });
       (async () => {
         const release = await keepAwake();
         try {
@@ -337,6 +338,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             markBusy(id, { kind: "exportacao", projectId: project.id, label: clip.title, at: Date.now(), detail: { short, format: clip.format, fps: clip.fps, seconds: clip.segments.reduce((a, s) => a + s.end - s.start, 0), res: `${project.source.width}x${project.source.height}`, codec: project.source.videoCodec } });
             const { blob, record, warnings } = await exportClip(file, clip, fresh.analysis, project.id, project.source.fps, {
               short,
+              light,
               signal: ctrl.signal,
               source: project.source,
               onProgress: (p) => updateJob(id, { value: (i + p.value) / clipIds.length, detail: `${clipIds.length > 1 ? `Clipe ${i + 1} de ${clipIds.length}: ` : ""}${p.detail}` }),
@@ -352,7 +354,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           setExports(await db.listExports());
           finishJob(id);
-          toast(clipIds.length > 1 ? "Exportação concluída! Toque em «Compartilhar todos» ou em «Compartilhar» de cada clipe." : "Exportação concluída! Toque em «Compartilhar» para mandar o vídeo para fora do app.");
+          toast(light ? "Versão leve pronta! Toque em «Compartilhar» de novo." : clipIds.length > 1 ? "Exportação concluída! Toque em «Salvar na galeria» ou «Compartilhar» em cada clipe." : "Exportação concluída! Toque em «Salvar na galeria» ou «Compartilhar».");
         } catch (e) {
           logError("exportação", e);
           finishJob(id, e);

@@ -36,7 +36,12 @@ export interface ExportOptions {
   signal?: AbortSignal;
   onProgress?: (p: ExportProgress) => void;
   source?: SourceInfo;
+  /** Versão leve para compartilhar: 720p, 30 FPS e no máximo ~45 MB. */
+  light?: boolean;
 }
+
+/** O menu de compartilhar do Chrome/Android recusa arquivos acima de 50 MB. */
+export const SHARE_BUDGET = 45 * 1024 * 1024;
 
 function checkAbort(signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException("Exportação cancelada", "AbortError");
@@ -149,12 +154,16 @@ const FRAME_TIMEOUT = 60_000;
 export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | undefined, projectId: string, sourceFps: number, opts: ExportOptions = {}): Promise<ExportResult> {
   const report = (value: number, detail: string) => opts.onProgress?.({ value, detail });
   await ensureFonts();
-  const { width: W, height: H } = outputSize(clip.format, opts.short ?? 1080);
-  const fps = Math.min(clip.fps, sourceFps >= 50 ? 60 : 30) as 30 | 60;
+  const light = !!opts.light;
+  const { width: W, height: H } = outputSize(clip.format, light ? 720 : opts.short ?? 1080);
+  const fps = (light ? 30 : Math.min(clip.fps, sourceFps >= 50 ? 60 : 30)) as 30 | 60;
   const segments = effectiveSegments(clip, analysis);
   const total = totalDuration(segments);
   if (total <= 0) throw new Error("O clipe está vazio.");
-  const bitrate = videoBitrate(W, H, fps);
+  // Sempre que a qualidade permitir, o arquivo cabe no compartilhamento do celular (< 45 MB)
+  const fitRate = Math.floor(((SHARE_BUDGET * 8) / total) * 0.94) - 170_000;
+  const floor = light ? 600_000 : W * H >= 1920 * 1080 * 0.9 ? 4_000_000 : 2_500_000;
+  const bitrate = Math.max(floor, Math.min(videoBitrate(W, H, fps), fitRate));
   const videoCodec = await getFirstEncodableVideoCodec(["avc", "vp9", "av1"], { width: W, height: H, bitrate });
   if (!videoCodec) throw new Error("Este navegador não consegue codificar vídeo nesse tamanho (WebCodecs). Tente a qualidade 720p em Configurações, ou use o Chrome/Edge/Safari atualizados.");
   const input = openInput(file);
@@ -363,6 +372,7 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
       videoCodec,
       audioCodec,
       mime: "video/mp4",
+      ...(light ? { light: true } : {}),
     };
     report(1, "Exportação concluída");
     return { blob, record, warnings };

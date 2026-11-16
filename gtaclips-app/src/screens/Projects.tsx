@@ -1,15 +1,16 @@
 // Meus projetos: lista e a tela de cada projeto (momentos, clipes, exportação).
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, Captions, CheckCircle2, ChevronDown, Download, FileArchive, FileVideo, FolderOpen, Info, Loader2, Pencil, Play, Plus, RefreshCw, Scissors, Share2, Sparkles, Trash2 } from "lucide-react";
-import type { Clip, Moment, Project } from "../core/types";
+import { AlertTriangle, ArrowLeft, Captions, CheckCircle2, ChevronDown, Download, FileArchive, FileVideo, FolderOpen, Images, Info, Loader2, Pencil, Play, Plus, RefreshCw, Scissors, Share2, Sparkles, Trash2 } from "lucide-react";
+import type { Clip, ExportRecord, Moment, Project } from "../core/types";
 import { CATEGORIES, category } from "../core/categories";
 import { FACTOR_LABEL } from "../core/moments";
 import { seg, totalDuration } from "../core/timeline";
 import { defaultStyle } from "../core/captions";
 import { fmtBytes, fmtDur, fmtTime, safeName, uid } from "../core/format";
 import { db, setSessionSource, sourceFor } from "../media/db";
-import { SHARE_MESSAGE, canShareFiles, downloadBlob, shareFiles, zipFiles } from "../media/files";
+import { SHARE_MESSAGE, canShareFiles, downloadBlob, saveToGallery, shareFiles, shareLimit, zipFiles } from "../media/files";
+import { isIOS } from "../media/device";
 import { useApp, updateClip } from "../ui/store";
 import { Bar, Card, Empty, Head, ScoreBadge, Seg, thumbAt, useThumbs } from "../ui/kit";
 import { Jobs, statusTag } from "./Dashboard";
@@ -240,7 +241,9 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
   const { go, exports, startExport, startCaptions, saveProject, toast, jobs } = useApp();
   const thumbs = useThumbs(p.id);
   const [zipping, setZipping] = useState(false);
-  const lastExport = (c: Clip) => exports.find((e) => e.clipId === c.id && e.createdAt >= c.updatedAt) ?? exports.find((e) => e.clipId === c.id);
+  const full = exports.filter((e) => !e.light);
+  const lastExport = (c: Clip) => full.find((e) => e.clipId === c.id && e.createdAt >= c.updatedAt) ?? full.find((e) => e.clipId === c.id);
+  const lightExport = (c: Clip) => exports.find((e) => e.light && e.clipId === c.id && e.createdAt >= c.updatedAt);
   const exporting = jobs.some((j) => j.projectId === p.id && j.kind === "exportacao" && j.status === "rodando");
 
   const zipAll = async () => {
@@ -260,18 +263,25 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
     }
   };
 
-  const share = useShare();
   const exportedCount = p.clips.filter((c) => lastExport(c)).length;
-  const shareAll = async () => {
-    const items: { name: string; blob: Blob }[] = [];
-    for (const c of p.clips) {
-      const e = lastExport(c);
-      if (!e) continue;
-      const b = await db.getExportFile(e.id);
-      if (b) items.push({ name: `${String(items.length + 1).padStart(2, "0")}-${safeName(c.title)}.mp4`, blob: b });
+  const [savingAll, setSavingAll] = useState(false);
+  const saveAll = async () => {
+    setSavingAll(true);
+    try {
+      let n = 0;
+      for (const c of p.clips) {
+        const e = lastExport(c);
+        if (!e) continue;
+        const b = await db.getExportFile(e.id);
+        if (!b) continue;
+        downloadBlob(b, `${String(++n).padStart(2, "0")}-${safeName(c.title)}.mp4`);
+        // Um de cada vez: o celular não se perde com vários downloads juntos
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      toast(n ? `${n} vídeo(s) enviados para Downloads. Eles aparecem na Galeria/Google Fotos (pasta «Download»). Se o navegador perguntar, permita baixar vários arquivos.` : "Exporte os clipes primeiro.", !n);
+    } finally {
+      setSavingAll(false);
     }
-    if (!items.length) return toast("Exporte os clipes primeiro.", true);
-    await share(items, p.name);
   };
 
   if (!p.clips.length) return <Empty>Nenhum clipe. Use «Gerar de novo» ou crie a partir de um momento.</Empty>;
@@ -287,9 +297,11 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
         <button className="btn primary" disabled={!hasSource || exporting} onClick={() => startExport(p, p.clips.map((c) => c.id))}>
           <Download size={16} /> EXPORTAR VÍDEOS ({p.clips.length})
         </button>
-        <button className="btn" disabled={!exportedCount} onClick={shareAll} title="Envia todos os MP4 de uma vez (WhatsApp, Telegram, Drive, Galeria…)">
-          <Share2 size={16} /> Compartilhar todos{exportedCount ? ` (${exportedCount})` : ""}
-        </button>
+        {!isIOS() && (
+          <button className="btn" disabled={!exportedCount || savingAll} onClick={saveAll}>
+            <Images size={16} /> {savingAll ? "Salvando…" : `Salvar todos na galeria${exportedCount ? ` (${exportedCount})` : ""}`}
+          </button>
+        )}
         <button className="btn" disabled={zipping || !p.clips.some((c) => lastExport(c))} onClick={zipAll}>
           <FileArchive size={16} /> {zipping ? "Montando ZIP…" : "Baixar todos (ZIP)"}
         </button>
@@ -297,7 +309,7 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
       {!exportedCount && (
         <div className="banner small">
           <Share2 size={16} />
-          <span>Para compartilhar ou mandar os clipes para fora do app, exporte primeiro. Depois aparece o botão «Compartilhar» em cada clipe: ele abre o menu do celular com o vídeo pronto para WhatsApp, Telegram, Drive, Galeria ou «Salvar vídeo».</span>
+          <span>Exporte primeiro. Depois cada clipe ganha os botões «Salvar na galeria» (o vídeo vai para a galeria do celular) e «Compartilhar» (WhatsApp, Telegram, Drive…).</span>
         </div>
       )}
       {p.clips.map((c, i) => {
@@ -355,7 +367,7 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
               <button className="btn sm" disabled={!hasSource || !!capJob || !p.source.audioCodec} onClick={() => startCaptions(p, c.id, { target: c.captionLang })}>
                 <Captions size={14} /> {c.captions.length ? "Refazer legendas" : "Gerar legendas"}
               </button>
-              {e && <ExportButtons id={e.id} name={c.title} size={e.size} outdated={!!outdated} />}
+              {e && <ExportButtons rec={e} name={c.title} outdated={!!outdated} light={lightExport(c)} onMakeLight={() => startExport(p, [c.id], { light: true })} busy={exporting} />}
               <button className="btn sm" disabled={!hasSource || exporting} onClick={() => startExport(p, [c.id])}>
                 <Play size={14} /> {e ? (outdated ? "Exportar de novo (clipe mudou)" : "Exportar de novo") : "Exportar MP4"}
               </button>
@@ -394,37 +406,68 @@ export function useShare() {
   };
 }
 
-export function ExportButtons({ id, name, size, outdated, compact }: { id: string; name: string; size: number; outdated: boolean; compact?: boolean }) {
+/** Salvar na galeria (principal) e Compartilhar; para arquivos acima de 50 MB oferece a versão leve. */
+export function ExportButtons({ rec, name, outdated, compact, light, onMakeLight, busy }: { rec: ExportRecord; name: string; outdated: boolean; compact?: boolean; light?: ExportRecord; onMakeLight?: () => void; busy?: boolean }) {
   const { toast } = useApp();
   const share = useShare();
-  const get = async () => {
+  const get = async (id: string) => {
     const b = await db.getExportFile(id);
     if (!b) toast("Arquivo não encontrado. Exporte o clipe de novo.", true);
     return b;
   };
   const file = `${safeName(name)}.mp4`;
+  const tooBig = rec.size > shareLimit();
+  const canLight = tooBig && !light && !!onMakeLight;
   return (
     <>
       <button
-        className={`btn sm ${outdated ? "" : "primary"}`}
+        className="btn sm primary"
         onClick={async () => {
-          const b = await get();
-          if (b) await share([{ blob: b, name: file }], name);
-        }}
-        title={canShareFiles() ? "WhatsApp, Telegram, Drive, Galeria, «Salvar vídeo»…" : "Este navegador não tem menu de compartilhar: o vídeo será baixado"}
-      >
-        <Share2 size={14} /> Compartilhar{outdated ? " (versão antiga)" : ""}
-      </button>
-      <button
-        className="btn sm"
-        onClick={async () => {
-          const b = await get();
-          if (b) downloadBlob(b, file);
+          const b = await get(rec.id);
+          if (!b) return;
+          const r = await saveToGallery(b, file);
+          if (r === "baixado") toast("Vídeo enviado para Downloads. Ele aparece na Galeria/Google Fotos (pasta «Download»).");
         }}
         title={outdated ? "O clipe mudou depois desta exportação" : ""}
       >
-        <Download size={14} /> {compact ? "MP4" : `Baixar (${fmtBytes(size)})`}
+        <Images size={14} /> {compact ? "Galeria" : `Salvar na galeria (${fmtBytes(rec.size)})`}
+        {outdated ? " · antigo" : ""}
       </button>
+      {light ? (
+        <button
+          className="btn sm"
+          onClick={async () => {
+            const b = await get(light.id);
+            if (b) await share([{ blob: b, name: `${safeName(name)}-leve.mp4` }], name);
+          }}
+          title="Versão 720p menor que 50 MB"
+        >
+          <Share2 size={14} /> Compartilhar (leve, {fmtBytes(light.size)})
+        </button>
+      ) : canLight ? (
+        <button
+          className="btn sm"
+          disabled={busy}
+          onClick={() => {
+            toast("Criando uma versão leve (720p, menos de 45 MB) para caber no compartilhamento…");
+            onMakeLight!();
+          }}
+          title="O compartilhamento do navegador aceita no máximo 50 MB"
+        >
+          <Share2 size={14} /> Compartilhar (criar versão leve)
+        </button>
+      ) : (
+        <button
+          className="btn sm"
+          onClick={async () => {
+            const b = await get(rec.id);
+            if (b) await share([{ blob: b, name: file }], name);
+          }}
+          title={canShareFiles() ? "WhatsApp, Telegram, Drive…" : "Este navegador não tem menu de compartilhar: o vídeo será baixado"}
+        >
+          <Share2 size={14} /> Compartilhar
+        </button>
+      )}
     </>
   );
 }
