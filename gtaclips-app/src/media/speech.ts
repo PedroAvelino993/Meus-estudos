@@ -1,7 +1,7 @@
 // Legendas automáticas: extrai o áudio dos trechos do clipe, transcreve com o Whisper no
 // aparelho, limpa erros comuns, separa vozes (estimativa) e traduz.
 
-import { AudioBufferSink } from "mediabunny";
+import { readAudio } from "./frames";
 import type { Caption, Segment } from "../core/types";
 import { assignSpeakers, chunksToCaptions, cleanChunks, detectLanguage, estimatePitch, LANGUAGES, type RawChunk } from "../core/captions";
 import { openInput } from "./probe";
@@ -26,11 +26,10 @@ export async function audio16k(file: Blob, start: number, end: number): Promise<
   try {
     const at = await input.getPrimaryAudioTrack();
     if (!at) return new Float32Array(0);
-    const sink = new AudioBufferSink(at);
     const rate = at.sampleRate;
     const len = Math.max(1, Math.round((end - start) * rate));
     const mono = new Float32Array(len);
-    for await (const { buffer, timestamp } of sink.buffers(start, end)) {
+    for await (const { buffer, timestamp } of readAudio(at, start, end)) {
       const off = Math.round((timestamp - start) * rate);
       const chans = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
       for (let i = 0; i < buffer.length; i++) {

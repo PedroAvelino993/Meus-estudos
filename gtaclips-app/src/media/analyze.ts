@@ -1,13 +1,14 @@
 // Análise do vídeo inteiro: lê quadros (nos quadros-chave, muito rápido), mede imagem e som,
 // pede ao modelo de visão para reconhecer o que acontece e monta a lista de momentos.
 
-import { AudioBufferSink, CanvasSink, EncodedPacketSink } from "mediabunny";
+import { EncodedPacketSink } from "mediabunny";
+import { MODE_LABEL, readAudio, readFrames } from "./frames";
 import type { Analysis, Category, Sample } from "../core/types";
 import { frameStats, normalizeEnvelope } from "../core/features";
 import { buildMoments, buildTimeline, deadSeconds } from "../core/moments";
 import { openInput } from "./probe";
 import { classifyFrames, loadVision, type ModelProgress } from "./ai";
-import { breathe, guarded, withTimeout } from "./device";
+import { breathe, withTimeout } from "./device";
 
 export interface AnalyzeProgress {
   phase: "preparando" | "modelo" | "imagens" | "som" | "momentos";
@@ -103,7 +104,6 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
     if (!vt) throw new Error("Sem faixa de vídeo");
     report({ phase: "preparando", value: 0, detail: "Lendo o índice do vídeo…" });
     const times = await sampleTimes(new EncodedPacketSink(vt), duration, opts.signal);
-    const sink = new CanvasSink(vt, { width: W, height: H, fit: "fill", poolSize: 3 });
     const small = new OffscreenCanvas(W, H);
     const sctx = small.getContext("2d", { willReadFrequently: true })!;
     const thumbCanvas = new OffscreenCanvas(160, 90);
@@ -132,7 +132,19 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
     };
     let lastThumb = -Infinity;
     let i = 0;
-    for await (const wrapped of guarded(sink.canvasesAtTimestamps(times), 60_000, "O decodificador de vídeo")) {
+    let fallbackNote: string | null = null;
+    const frames = readFrames(vt, file, times, {
+      width: W,
+      height: H,
+      fill: true,
+      poolSize: 3,
+      signal: opts.signal,
+      onFallback: (mode) => {
+        fallbackNote = `O decodificador de vídeo do aparelho falhou; a leitura continuou com ${MODE_LABEL[mode]}.`;
+        report({ phase: "imagens", value: i / times.length, detail: `Decodificador falhou, continuando com ${MODE_LABEL[mode]}…` });
+      },
+    });
+    for await (const wrapped of frames) {
       checkAbort(opts.signal);
       const t = times[i++];
       if (!wrapped) continue;
@@ -159,6 +171,7 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
     }
     flush();
     for (const p of inflight) await p;
+    if (fallbackNote) notes.push(fallbackNote);
     if (visionFailed) {
       // Mistura de quadros com e sem IA daria notas incoerentes: usa a análise básica em tudo
       for (const smp of samples) delete smp.labels;
@@ -170,16 +183,15 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
     // ---------- Som ----------
     let audio: Analysis["audio"] = null;
     const at = await input.getPrimaryAudioTrack();
-    if (at && (await at.canDecode())) {
+    if (at && (await at.canDecode())) try {
       const rate = 4;
       const values: number[] = [];
-      const asink = new AudioBufferSink(at);
       let acc = 0;
       let count = 0;
       let windowSize = 0;
       let lastReport = 0;
       let nb = 0;
-      for await (const { buffer, timestamp } of guarded(asink.buffers(0, duration), 60_000, "O decodificador de áudio")) {
+      for await (const { buffer, timestamp } of readAudio(at, 0, duration, { signal: opts.signal })) {
         if (++nb % 20 === 0) await breathe();
         checkAbort(opts.signal);
         if (!windowSize) windowSize = Math.round(buffer.sampleRate / rate);
@@ -201,6 +213,11 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
         }
       }
       audio = { rate, rms: normalizeEnvelope(values) };
+    } catch (e) {
+      if (opts.signal?.aborted) throw e;
+      // Sem o som a análise continua (só com a imagem), em vez de falhar inteira
+      audio = null;
+      notes.push(`${e instanceof Error ? e.message : e} A análise usou só a imagem.`);
     }
     report({ phase: "momentos", value: 0.5, detail: "Identificando momentos e montando histórias…" });
     const tl = buildTimeline(samples, audio, duration);

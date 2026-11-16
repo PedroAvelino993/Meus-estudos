@@ -178,6 +178,8 @@ function Preview({ clip, segs, file, project }: { clip: Clip; segs: Segment[]; f
   const [url, setUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [outT, setOutT] = useState(0);
+  // Prévia solta durante exportação/análise: o celular tem poucos decodificadores de vídeo
+  const [released, setReleased] = useState(false);
   const st = useRef({ seg: 0, outT: 0, playing: false, dirty: true, lastUi: 0 });
   const fast = useMemo(() => lowMemory(), []);
   const path = useMemo(() => (project.analysis ? actionPath(project.analysis.samples) : []), [project.analysis]);
@@ -192,6 +194,22 @@ function Preview({ clip, segs, file, project }: { clip: Clip; segs: Segment[]; f
     ensureFonts();
     return () => URL.revokeObjectURL(u);
   }, [file]);
+
+  useEffect(() => {
+    const free = () => {
+      const v = video.current;
+      if (v) {
+        v.pause();
+        v.removeAttribute("src");
+        v.load();
+      }
+      st.current.playing = false;
+      setPlaying(false);
+      setReleased(true);
+    };
+    window.addEventListener("gca:free-decoders", free);
+    return () => window.removeEventListener("gca:free-decoders", free);
+  }, []);
 
   const draw = useCallback(() => {
     const v = video.current;
@@ -285,13 +303,18 @@ function Preview({ clip, segs, file, project }: { clip: Clip; segs: Segment[]; f
       <div className="player" style={{ aspectRatio: `${width}/${height}`, maxHeight: "64vh", margin: "0 auto" }}>
         <canvas ref={canvas} width={width} height={height} style={{ width: "100%", height: "100%" }} onClick={toggle} />
         {!file && <div className="small muted" style={{ position: "absolute" }}>Sem o vídeo original</div>}
+        {file && released && (
+          <button className="btn sm" style={{ position: "absolute", bottom: 10 }} onClick={() => setReleased(false)}>
+            Prévia pausada para liberar o aparelho · Recarregar
+          </button>
+        )}
       </div>
-      {url && <video ref={video} src={url} playsInline preload="auto" muted={false} style={{ position: "absolute", width: 2, height: 2, opacity: 0.01, pointerEvents: "none", left: 0, top: 0 }} onSeeked={() => { st.current.dirty = true; }} onLoadedData={() => { st.current.dirty = true; }} onLoadedMetadata={() => seek(st.current.outT)} />}
+      {url && !released && <video ref={video} src={url} playsInline preload="auto" muted={false} style={{ position: "absolute", width: 2, height: 2, opacity: 0.01, pointerEvents: "none", left: 0, top: 0 }} onSeeked={() => { st.current.dirty = true; }} onLoadedData={() => { st.current.dirty = true; }} onLoadedMetadata={() => seek(st.current.outT)} />}
       <div className="row" style={{ marginTop: 10 }}>
         <button className="btn sm" onClick={() => seek(0)} aria-label="Voltar ao início" disabled={!file}>
           <SkipBack size={15} />
         </button>
-        <button className="btn sm primary" onClick={toggle} disabled={!file} aria-label={playing ? "Pausar" : "Assistir"}>
+        <button className="btn sm primary" onClick={toggle} disabled={!file || released} aria-label={playing ? "Pausar" : "Assistir"}>
           {playing ? <Pause size={15} /> : <Play size={15} />}
         </button>
         <input type="range" min={0} max={Math.max(0.1, total)} step={0.05} value={outT} onChange={(e) => seek(Number(e.target.value))} className="grow" aria-label="Posição" />

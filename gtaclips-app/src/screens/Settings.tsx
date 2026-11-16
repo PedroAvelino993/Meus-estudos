@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Brain, Bug, Copy, Cpu, ExternalLink, Feather, HardDrive, KeyRound, Trash2, Youtube } from "lucide-react";
 import { clearErrorLog, deviceSummary, errorLog, lowMemory } from "../media/device";
+import { MODE_LABEL, preferredDecode, resetDecodePreference } from "../media/frames";
 import { WHISPER_MODELS } from "../media/ai";
 import { capabilities, type Capabilities } from "../media/probe";
 import { claudeAvailable, claudeKey, setClaudeKey, testClaude } from "../media/claude";
@@ -23,6 +24,7 @@ export default function Settings() {
   const [device, setDevice] = useState(localStorage.getItem("gca:device") ?? "auto");
   const [safe, setSafe] = useState(localStorage.getItem("gca:safe") === "1");
   const [errors, setErrors] = useState(errorLog);
+  const [decodeMode, setDecodeMode] = useState(preferredDecode);
   useEffect(() => {
     capabilities().then(setCaps);
     storageEstimate().then(setStorage);
@@ -249,6 +251,24 @@ export default function Settings() {
         <Card title="Diagnóstico" icon={<Bug size={16} />}>
           <div className="stack small">
             <p className="muted">Se algo der errado, os erros ficam registrados aqui (só neste aparelho). Copie e mande para quem dá suporte ao app.</p>
+            <div className="row between wrap">
+              <span>
+                Leitura de vídeo: <b>{MODE_LABEL[decodeMode]}</b>
+                {decodeMode !== "hardware" && <span className="tiny muted"> (escolhida depois de uma falha do decodificador)</span>}
+              </span>
+              {decodeMode !== "hardware" && (
+                <button
+                  className="btn sm ghost"
+                  onClick={() => {
+                    resetDecodePreference();
+                    setDecodeMode("hardware");
+                    toast("Na próxima tarefa o app tenta de novo o decodificador mais rápido.");
+                  }}
+                >
+                  Voltar ao mais rápido
+                </button>
+              )}
+            </div>
             {errors.length ? (
               <div className="list" style={{ maxHeight: 240, overflowY: "auto" }}>
                 {errors.map((e, i) => (
@@ -265,7 +285,7 @@ export default function Settings() {
               <button
                 className="btn sm"
                 onClick={() => {
-                  const txt = [`GTA Clips AI — diagnóstico (${new Date().toLocaleString("pt-BR")})`, deviceSummary(), `Modo leve: ${lowMemory() ? "sim" : "não"} · IA de visão: ${settings.useVision ? "sim" : "não"} · exportação ${settings.exportQuality}p`, caps ? `WebCodecs ${caps.webcodecs} · vídeo ${caps.videoCodec} · áudio ${caps.audioCodec} · WebGPU ${caps.webgpu}` : "", ...errors.map((e) => `${new Date(e.at).toISOString()} [${e.where}] ${e.message}\n${e.stack ?? ""}`)].join("\n");
+                  const txt = [`GTA Clips AI — diagnóstico (${new Date().toLocaleString("pt-BR")})`, deviceSummary(), `Leitura de vídeo: ${decodeMode} · Modo leve: ${lowMemory() ? "sim" : "não"} · IA de visão: ${settings.useVision ? "sim" : "não"} · exportação ${settings.exportQuality}p`, caps ? `WebCodecs ${caps.webcodecs} · vídeo ${caps.videoCodec} · áudio ${caps.audioCodec} · WebGPU ${caps.webgpu}` : "", ...errors.map((e) => `${new Date(e.at).toISOString()} [${e.where}] ${e.message}\n${e.stack ?? ""}`)].join("\n");
                   navigator.clipboard?.writeText(txt).then(
                     () => toast("Diagnóstico copiado."),
                     () => toast("Não foi possível copiar.", true),

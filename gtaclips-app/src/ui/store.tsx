@@ -8,6 +8,7 @@ import { uid } from "../core/format";
 import { db, setSessionSource, sourceFor } from "../media/db";
 import { analyzeVideo } from "../media/analyze";
 import { cleanupChunks, exportClip } from "../media/export";
+import { freeDecoders } from "../media/frames";
 import { generateCaptions } from "../media/speech";
 import { releaseAI } from "../media/ai";
 import { clearBusy, isIOS, logError, lowMemory, markBusy, takeCrashed, type BusyMark } from "../media/device";
@@ -262,6 +263,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           const s = settingsRef.current;
           markBusy(id, { kind: "analise", projectId: project.id, label: project.name, at: Date.now(), detail: { vision: s.useVision, device: localStorage.getItem("gca:safe") === "1" || lowMemory() ? "wasm" : "auto", size: project.source.size, dur: project.source.duration, res: `${project.source.width}x${project.source.height}`, codec: project.source.videoCodec } });
+          freeDecoders();
           const { analysis, thumbs, notes } = await analyzeVideo(file, project.source.duration, {
             useVision: s.useVision,
             learned: s.useLearned ? s.learned : {},
@@ -323,12 +325,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const fresh = (await db.getProject(project.id)) ?? project;
           // Memória de IA liberada antes de exportar (em aparelhos com pouca memória)
           if (lowMemory()) releaseAI();
+          // A prévia do editor solta o decodificador de vídeo (celulares têm poucos)
+          freeDecoders();
           for (let i = 0; i < clipIds.length; i++) {
             const clip = fresh.clips.find((c) => c.id === clipIds[i]);
             if (!clip) continue;
             const short = settingsRef.current.exportQuality;
             markBusy(id, { kind: "exportacao", projectId: project.id, label: clip.title, at: Date.now(), detail: { short, format: clip.format, fps: clip.fps, seconds: clip.segments.reduce((a, s) => a + s.end - s.start, 0), res: `${project.source.width}x${project.source.height}`, codec: project.source.videoCodec } });
-            const { blob, record } = await exportClip(file, clip, fresh.analysis, project.id, project.source.fps, {
+            const { blob, record, warnings } = await exportClip(file, clip, fresh.analysis, project.id, project.source.fps, {
               short,
               signal: ctrl.signal,
               onProgress: (p) => updateJob(id, { value: (i + p.value) / clipIds.length, detail: `${clipIds.length > 1 ? `Clipe ${i + 1} de ${clipIds.length}: ` : ""}${p.detail}` }),
@@ -336,6 +340,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             try {
               await db.putExport(record, blob);
               await cleanupChunks();
+              for (const w of warnings) toast(w);
             } catch (e) {
               logError("salvar exportação", e);
               throw new Error("O vídeo ficou pronto, mas não há espaço para guardá-lo no navegador. Apague exportações antigas em Configurações → Armazenamento e tente de novo.");

@@ -8,14 +8,15 @@
 // - cada etapa tem limite de tempo: se o decodificador/codificador travar, a exportação para com
 //   uma mensagem clara em vez de congelar o app.
 
-import { AudioBufferSink, AudioBufferSource, CanvasSink, CanvasSource, Mp4OutputFormat, Output, StreamTarget, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec, type StreamTargetChunk } from "mediabunny";
+import { AudioBufferSource, CanvasSource, Mp4OutputFormat, Output, StreamTarget, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec, type StreamTargetChunk } from "mediabunny";
 import type { Analysis, Clip, ExportRecord, Segment } from "../core/types";
 import { actionPath, removeSilences, totalDuration } from "../core/timeline";
 import { uid } from "../core/format";
 import { openInput } from "./probe";
 import { drawFrame, ensureFonts, outputSize, type FrameState } from "./compose";
-import { breathe, guarded, withTimeout } from "./device";
+import { breathe, withTimeout } from "./device";
 import { db } from "./db";
+import { MODE_LABEL, readAudio, readFrames } from "./frames";
 
 export interface ExportProgress {
   value: number;
@@ -25,6 +26,8 @@ export interface ExportProgress {
 export interface ExportResult {
   blob: Blob;
   record: ExportRecord;
+  /** Avisos sobre o que precisou ser contornado (ex.: decodificador trocado, áudio com falhas). */
+  warnings: string[];
 }
 
 export interface ExportOptions {
@@ -154,6 +157,7 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
   const videoCodec = await getFirstEncodableVideoCodec(["avc", "vp9", "av1"], { width: W, height: H, bitrate });
   if (!videoCodec) throw new Error("Este navegador não consegue codificar vídeo nesse tamanho (WebCodecs). Tente a qualidade 720p em Configurações, ou use o Chrome/Edge/Safari atualizados.");
   const input = openInput(file);
+  const warnings: string[] = [];
   const job = uid("exp");
   try {
     const vt = await input.getPrimaryVideoTrack();
@@ -191,15 +195,15 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
     // memória esperando por ele. Com o áudio pronto antes, só os pacotes de áudio (pequenos) esperam.
     if (audioSource && at) {
       report(0, "Processando o áudio…");
-      const asink = new AudioBufferSink(at);
       const rate = at.sampleRate;
-      const buffers = (s: Segment) => guarded(asink.buffers(s.start, s.end), FRAME_TIMEOUT, "O decodificador de áudio");
+      const buffers = (s: Segment) => readAudio(at, s.start, s.end, { timeout: FRAME_TIMEOUT, signal: opts.signal });
       // 1ª passada: volume médio, para normalizar
       let gain = clip.volume;
       if (clip.normalize) {
         let acc = 0;
         let cnt = 0;
         for (const s of segments) {
+          try {
           for await (const { buffer, timestamp } of buffers(s)) {
             checkAbort(opts.signal);
             const from = Math.max(0, Math.floor((s.start - timestamp) * buffer.sampleRate));
@@ -210,6 +214,10 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
               cnt++;
             }
           }
+          } catch (e) {
+            if (opts.signal?.aborted) throw e;
+            // Só a medição de volume: segue com o que conseguiu medir
+          }
           await breathe();
         }
         const rms = Math.sqrt(acc / Math.max(1, cnt));
@@ -217,6 +225,7 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
         if (rms > 1e-4) gain *= Math.max(0.5, Math.min(4, 0.1 / rms));
       }
       let outFrames = 0;
+      let audioGaps = 0;
       // Processa o áudio em janelas de 10 s (memória baixa mesmo em clipes longos)
       const WIN = 10;
       for (let si = 0; si < segments.length; si++) {
@@ -232,7 +241,9 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
           const b = s.start + w1 / rate;
           let L = new Float32Array(w1 - w0);
           let R = new Float32Array(w1 - w0);
-          for await (const { buffer, timestamp } of guarded(asink.buffers(a, b), FRAME_TIMEOUT, "O decodificador de áudio")) {
+          let filled = 0;
+          try {
+          for await (const { buffer, timestamp } of readAudio(at, a, b, { timeout: FRAME_TIMEOUT, signal: opts.signal })) {
             checkAbort(opts.signal);
             const offset = Math.round((timestamp - a) * rate);
             const c0 = buffer.getChannelData(0);
@@ -242,7 +253,13 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
               if (j < 0 || j >= L.length) continue;
               L[j] = c0[i];
               R[j] = c1[i];
+              filled++;
             }
+          }
+          } catch (e) {
+            if (opts.signal?.aborted) throw e;
+            // Trecho de áudio ilegível: fica em silêncio, o vídeo continua
+            audioGaps += Math.max(0, w1 - w0 - filled) / rate;
           }
           // Volume, fades nas emendas e limitador suave
           for (let j = 0; j < L.length; j++) {
@@ -272,6 +289,7 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
         report((outFrames / totalFrames) * 0.1, "Processando o áudio…");
       }
       audioSource.close();
+      if (audioGaps > 0.5) warnings.push(`O aparelho não conseguiu ler ${Math.round(audioGaps)} s do áudio original; esses trechos ficaram em silêncio.`);
     }
     // ---------- Vídeo ----------
     // Decodifica só o necessário: a altura de saída (com folga para o zoom), nunca acima de 2160
@@ -279,7 +297,11 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
     const portrait = vt.displayHeight > vt.displayWidth;
     const need = portrait ? Math.max(H, W) : Math.round(Math.max(H, W * (vt.displayHeight / vt.displayWidth)) * Math.min(maxZoom, 1.6));
     const sinkHeight = Math.min(vt.displayHeight, need, 2160);
-    const sink = new CanvasSink(vt, { height: sinkHeight, poolSize: 2 });
+    const onFallback = (mode: keyof typeof MODE_LABEL) => {
+      const msg = `O decodificador de vídeo do aparelho falhou; a exportação continuou com ${MODE_LABEL[mode]}${mode === "element" ? " (mais lento)" : ""}.`;
+      if (!warnings.includes(msg)) warnings.push(msg);
+      report(0.1 + (frame / totalFrames) * 0.86, `Decodificador falhou, continuando com ${MODE_LABEL[mode]}…`);
+    };
     const path = analysis ? actionPath(analysis.samples) : [];
     let frame = 0;
     let outT = 0;
@@ -292,7 +314,7 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
       let last: CanvasImageSource | null = null;
       let lw = 0;
       let lh = 0;
-      for await (const wrapped of guarded(sink.canvasesAtTimestamps(times), FRAME_TIMEOUT, "O decodificador de vídeo")) {
+      for await (const wrapped of readFrames(vt, file, times, { height: sinkHeight, poolSize: 2, timeout: FRAME_TIMEOUT, signal: opts.signal, onFallback })) {
         checkAbort(opts.signal);
         if (k >= n) break;
         const t = outT + k / fps;
@@ -342,7 +364,7 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
       mime: "video/mp4",
     };
     report(1, "Exportação concluída");
-    return { blob, record };
+    return { blob, record, warnings };
   } finally {
     input.dispose();
     // Exportação cancelada ou com erro: apaga os blocos temporários
