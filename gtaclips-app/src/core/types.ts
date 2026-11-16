@@ -94,6 +94,8 @@ export interface Analysis {
   deadSeconds: number;
   createdAt: number;
   elapsedMs: number;
+  /** Quando o aparelho só conseguiu ler parte do vídeo: até onde a análise vale (s). */
+  readableUntil?: number;
 }
 
 // ---------- Clipes e linha do tempo ----------
@@ -212,6 +214,10 @@ export interface SourceInfo {
   videoCodec: string;
   audioCodec: string | null;
   container: string;
+  /** Codec completo (ex.: vp09.02.51.10), HDR e bits por cor, quando o arquivo informa. */
+  codecString?: string;
+  hdr?: boolean;
+  bitDepth?: number;
   /** Cópia do vídeo guardada no aparelho (IndexedDB). */
   stored: boolean;
 }

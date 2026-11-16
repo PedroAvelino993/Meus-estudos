@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Brain, FileVideo, HardDrive, Info, Sparkles, Upload } from "lucide-react";
 import type { GenerateSettings, SourceInfo } from "../core/types";
-import { capabilities, probe, type Capabilities } from "../media/probe";
+import { capabilities, describeSource, heavyForPhone, probe, type Capabilities } from "../media/probe";
+import { CONVERT_TIP, MODE_LABEL, decodeCheck, type DecodeCheck } from "../media/frames";
+import { isMobile } from "../media/device";
 import { requestPersistence } from "../media/db";
 import { fmtBytes, fmtDur } from "../core/format";
 import { newProject, useApp } from "../ui/store";
@@ -19,6 +21,9 @@ export default function Create() {
   const [reading, setReading] = useState(false);
   const [gen, setGen] = useState<GenerateSettings>(settings.defaults);
   const [caps, setCaps] = useState<Capabilities | null>(null);
+  // Teste rápido de leitura neste aparelho (começo, meio e fim do vídeo)
+  const [check, setCheck] = useState<DecodeCheck | "testando" | null>(null);
+  const checking = useRef<Promise<unknown> | null>(null);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     capabilities().then(setCaps);
@@ -28,11 +33,15 @@ export default function Create() {
     setFile(f);
     setInfo(null);
     setErr(null);
+    setCheck(null);
     setReading(true);
     try {
       const i = await probe(f);
       setInfo(i);
       if (i.fps < 50 && gen.fps === 60) setGen({ ...gen, fps: 30 });
+      setCheck("testando");
+      const job = decodeCheck(f, i).then((r) => setCheck(r));
+      checking.current = job;
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -42,6 +51,8 @@ export default function Create() {
 
   const start = async () => {
     if (!file || !info) return;
+    // Não disputa o decodificador com o teste de leitura
+    if (checking.current) await checking.current;
     setSettings({ defaults: gen });
     if (settings.storeSource) await requestPersistence();
     const p = newProject(file.name, info, gen);
@@ -118,6 +129,32 @@ export default function Create() {
               </div>
             </div>
             {!info.audioCodec && <p className="tiny muted" style={{ marginTop: 8 }}>Sem áudio decodificável: a análise usa só a imagem e as legendas ficam indisponíveis.</p>}
+            <p className="tiny muted" style={{ marginTop: 8 }}>Vídeo: {describeSource(info)}</p>
+            {check === "testando" && <div className="banner small" style={{ marginTop: 8 }}>Testando se este aparelho consegue ler o vídeo…</div>}
+            {check && check !== "testando" && check.ok && check.mode === "hardware" && <div className="banner small" style={{ marginTop: 8 }}>✓ Este aparelho lê o vídeo normalmente.</div>}
+            {check && check !== "testando" && check.ok && check.mode !== "hardware" && (
+              <div className="banner amber" style={{ marginTop: 8 }}>
+                <AlertTriangle size={18} />
+                <span>
+                  O decodificador rápido deste aparelho não lê este vídeo; vou usar {MODE_LABEL[check.mode]}. Funciona, mas {check.mode === "element" ? "a exportação fica bem mais lenta (perto do tempo real)" : "fica mais lento"}.
+                  {heavyForPhone(info).length > 0 && ` Motivo provável: ${heavyForPhone(info).join(", ")}.`}
+                </span>
+              </div>
+            )}
+            {check && check !== "testando" && !check.ok && (
+              <div className="banner red" style={{ marginTop: 8 }}>
+                <AlertTriangle size={18} />
+                <span>{check.error}</span>
+              </div>
+            )}
+            {!check && isMobile() && heavyForPhone(info).length > 0 && (
+              <div className="banner amber" style={{ marginTop: 8 }}>
+                <AlertTriangle size={18} />
+                <span>
+                  Vídeo pesado para celular ({heavyForPhone(info).join(", ")}). {CONVERT_TIP}
+                </span>
+              </div>
+            )}
           </Card>
           <Card title="Como dividir o vídeo" icon={<Sparkles size={16} />}>
             <GenerateForm value={gen} onChange={setGen} sourceFps={info.fps} sourceDuration={info.duration} />
@@ -145,7 +182,7 @@ export default function Create() {
               </div>
             </div>
             <button className="btn primary lg block" style={{ marginTop: 14 }} onClick={start}>
-              <Sparkles size={18} /> Analisar e criar clipes
+              <Sparkles size={18} /> {check && check !== "testando" && !check.ok ? "Tentar analisar mesmo assim" : "Analisar e criar clipes"}
             </button>
           </Card>
         </>

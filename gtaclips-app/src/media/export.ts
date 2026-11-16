@@ -9,7 +9,7 @@
 //   uma mensagem clara em vez de congelar o app.
 
 import { AudioBufferSource, CanvasSource, Mp4OutputFormat, Output, StreamTarget, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec, type StreamTargetChunk } from "mediabunny";
-import type { Analysis, Clip, ExportRecord, Segment } from "../core/types";
+import type { Analysis, Clip, ExportRecord, Segment, SourceInfo } from "../core/types";
 import { actionPath, removeSilences, totalDuration } from "../core/timeline";
 import { uid } from "../core/format";
 import { openInput } from "./probe";
@@ -35,6 +35,7 @@ export interface ExportOptions {
   short?: 1080 | 720;
   signal?: AbortSignal;
   onProgress?: (p: ExportProgress) => void;
+  source?: SourceInfo;
 }
 
 function checkAbort(signal?: AbortSignal) {
@@ -314,7 +315,7 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
       let last: CanvasImageSource | null = null;
       let lw = 0;
       let lh = 0;
-      for await (const wrapped of readFrames(vt, file, times, { height: sinkHeight, poolSize: 2, timeout: FRAME_TIMEOUT, signal: opts.signal, onFallback })) {
+      for await (const wrapped of readFrames(vt, file, times, { height: sinkHeight, poolSize: 2, timeout: FRAME_TIMEOUT, signal: opts.signal, onFallback, source: opts.source })) {
         checkAbort(opts.signal);
         if (k >= n) break;
         const t = outT + k / fps;

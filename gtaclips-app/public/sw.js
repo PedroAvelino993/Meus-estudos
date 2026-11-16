@@ -1,6 +1,6 @@
 // Modo offline do GTA Clips AI: rede primeiro (sempre a versão mais nova), cópia guardada quando offline.
 // "no-cache" faz o navegador conferir com o site, para nunca misturar arquivos de versões diferentes.
-const CACHE = "gtaclips-v3";
+const CACHE = "gtaclips-v4";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "./index.html", "./manifest.webmanifest", "./icon.svg"].map((u) => new Request(u, { cache: "reload" })))));

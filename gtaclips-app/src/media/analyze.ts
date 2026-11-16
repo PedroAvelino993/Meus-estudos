@@ -3,7 +3,7 @@
 
 import { EncodedPacketSink } from "mediabunny";
 import { MODE_LABEL, readAudio, readFrames } from "./frames";
-import type { Analysis, Category, Sample } from "../core/types";
+import type { Analysis, Category, Sample, SourceInfo } from "../core/types";
 import { frameStats, normalizeEnvelope } from "../core/features";
 import { buildMoments, buildTimeline, deadSeconds } from "../core/moments";
 import { openInput } from "./probe";
@@ -22,6 +22,7 @@ export interface AnalyzeOptions {
   learned?: Partial<Record<Category, number>>;
   signal?: AbortSignal;
   onProgress?: (p: AnalyzeProgress) => void;
+  source?: SourceInfo;
 }
 
 const W = 224;
@@ -139,11 +140,14 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
       fill: true,
       poolSize: 3,
       signal: opts.signal,
+      source: opts.source,
       onFallback: (mode) => {
         fallbackNote = `O decodificador de vídeo do aparelho falhou; a leitura continuou com ${MODE_LABEL[mode]}.`;
         report({ phase: "imagens", value: i / times.length, detail: `Decodificador falhou, continuando com ${MODE_LABEL[mode]}…` });
       },
     });
+    let readError: unknown = null;
+    try {
     for await (const wrapped of frames) {
       checkAbort(opts.signal);
       const t = times[i++];
@@ -169,9 +173,19 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
       }
       if (i % 10 === 0) report({ phase: "imagens", value: i / times.length, detail: vision ? `IA de visão analisando os acontecimentos: ${i} de ${times.length} quadros` : `Analisando imagens: ${i} de ${times.length} quadros` });
     }
+    } catch (e) {
+      if (opts.signal?.aborted) throw e;
+      // A leitura parou no meio: se já leu uma boa parte, analisa o que foi lido em vez de perder tudo
+      if (samples.length < Math.max(8, times.length * 0.25)) throw e;
+      readError = e;
+    }
     flush();
     for (const p of inflight) await p;
     if (fallbackNote) notes.push(fallbackNote);
+    if (readError && samples.length) {
+      const upTo = samples[samples.length - 1].t;
+      notes.push(`O aparelho só conseguiu ler o vídeo até ${Math.floor(upTo / 60)}min${String(Math.floor(upTo % 60)).padStart(2, "0")}s; os clipes foram montados com essa parte. Para usar o vídeo inteiro, converta para MP4 H.264 1080p sem HDR ou analise num computador.`);
+    }
     if (visionFailed) {
       // Mistura de quadros com e sem IA daria notas incoerentes: usa a análise básica em tudo
       for (const smp of samples) delete smp.labels;
@@ -220,9 +234,11 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
       notes.push(`${e instanceof Error ? e.message : e} A análise usou só a imagem.`);
     }
     report({ phase: "momentos", value: 0.5, detail: "Identificando momentos e montando histórias…" });
-    const tl = buildTimeline(samples, audio, duration);
+    // Leitura parcial: a análise (e os clipes) ficam só na parte que o aparelho conseguiu ler
+    const readableUntil = readError && samples.length ? Math.min(duration, samples[samples.length - 1].t + 1) : undefined;
+    const tl = buildTimeline(samples, audio, readableUntil ?? duration);
     const moments = buildMoments(tl, opts.learned);
-    const analysis: Analysis = { version: 1, mode: vision ? "ia" : "basica", samples, audio, moments, deadSeconds: deadSeconds(moments), createdAt: Date.now(), elapsedMs: Math.round(performance.now() - started) };
+    const analysis: Analysis = { version: 1, mode: vision ? "ia" : "basica", samples, audio, moments, deadSeconds: deadSeconds(moments), createdAt: Date.now(), elapsedMs: Math.round(performance.now() - started), ...(readableUntil ? { readableUntil } : {}) };
     report({ phase: "momentos", value: 1, detail: `${moments.filter((m) => !m.dead).length} momentos encontrados` });
     return { analysis, thumbs, notes };
   } finally {

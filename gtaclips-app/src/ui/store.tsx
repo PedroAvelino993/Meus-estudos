@@ -268,6 +268,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             useVision: s.useVision,
             learned: s.useLearned ? s.learned : {},
             signal: ctrl.signal,
+            source: project.source,
             onProgress: (pr) => {
               const base = { modelo: 0, preparando: 0.05, imagens: 0.1, som: 0.75, momentos: 0.95 }[pr.phase];
               const span = { modelo: 0.05, preparando: 0.05, imagens: 0.65, som: 0.2, momentos: 0.05 }[pr.phase];
@@ -275,7 +276,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             },
           });
           await db.putThumbs(project.id, thumbs);
-          const gen = generate(analysis.moments, buildTimeline(analysis.samples, analysis.audio, project.source.duration).intensity, p.settings, project.source.duration);
+          const usable = Math.min(project.source.duration, analysis.readableUntil ?? Infinity);
+          const gen = generate(analysis.moments, buildTimeline(analysis.samples, analysis.audio, usable).intensity, p.settings, usable);
           p = { ...p, status: "analisado", analysis, clips: gen.clips, notes: [...extra, ...notes, ...gen.notes] };
           await saveProject(p);
           finishJob(id);
@@ -303,9 +305,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (project: Project, gs: GenerateSettings) => {
       if (!project.analysis) return project;
       const s = settingsRef.current;
-      const tl = buildTimeline(project.analysis.samples, project.analysis.audio, project.source.duration);
+      const usable = Math.min(project.source.duration, project.analysis.readableUntil ?? Infinity);
+      const tl = buildTimeline(project.analysis.samples, project.analysis.audio, usable);
       const moments = buildMoments(tl, s.useLearned ? s.learned : {});
-      const gen = generate(moments, tl.intensity, gs, project.source.duration);
+      const gen = generate(moments, tl.intensity, gs, usable);
       const p: Project = { ...project, settings: gs, analysis: { ...project.analysis, moments, deadSeconds: deadSeconds(moments) }, clips: gen.clips, notes: gen.notes };
       await saveProject(p);
       return p;
@@ -335,6 +338,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const { blob, record, warnings } = await exportClip(file, clip, fresh.analysis, project.id, project.source.fps, {
               short,
               signal: ctrl.signal,
+              source: project.source,
               onProgress: (p) => updateJob(id, { value: (i + p.value) / clipIds.length, detail: `${clipIds.length > 1 ? `Clipe ${i + 1} de ${clipIds.length}: ` : ""}${p.detail}` }),
             });
             try {
