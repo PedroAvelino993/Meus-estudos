@@ -149,3 +149,27 @@ export function takeCrashed(): BusyMark[] {
     return [];
   }
 }
+
+// ---------- Navegador de dentro de outro app ----------
+
+/** Nome do app quando o site está aberto no navegador interno de outro app (lá downloads não funcionam). */
+export function inAppBrowser(): string | null {
+  if (typeof navigator === "undefined") return null;
+  const ua = navigator.userAgent;
+  if (/Instagram/i.test(ua)) return "Instagram";
+  if (/FBAN|FBAV|FB_IAB|FBIOS/i.test(ua)) return "Facebook";
+  if (/Telegram/i.test(ua)) return "Telegram";
+  if (/TikTok|musical_ly|BytedanceWebview/i.test(ua)) return "TikTok";
+  if (/WhatsApp/i.test(ua)) return "WhatsApp";
+  if (/Line\//i.test(ua)) return "Line";
+  if (/MicroMessenger/i.test(ua)) return "WeChat";
+  // WebView genérico do Android (apps que abrem links por dentro)
+  if (/Android/i.test(ua) && /; wv\)/.test(ua)) return "outro app";
+  return null;
+}
+
+/** Link que abre esta mesma página no Chrome (Android). */
+export function openInChromeUrl(): string {
+  const { host, pathname, search, hash } = location;
+  return `intent://${host}${pathname}${search}${hash}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(location.href)};end`;
+}

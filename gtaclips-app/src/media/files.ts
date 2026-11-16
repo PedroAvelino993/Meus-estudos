@@ -62,10 +62,24 @@ export async function shareFiles(items: { blob: Blob; name: string }[], title?: 
 export const SHARE_MESSAGE: Record<Exclude<ShareResult, "ok" | "cancelado">, string> = {
   indisponivel: "Este navegador não abre o menu de compartilhar com arquivos. O vídeo foi baixado; compartilhe pela galeria ou pelos arquivos do aparelho.",
   "toque-de-novo": "O arquivo terminou de carregar. Toque em Compartilhar de novo.",
-  "grande-demais": "O vídeo passa do limite de 50 MB do compartilhamento do navegador. Use «Salvar na galeria» e compartilhe pela galeria, ou crie a versão leve.",
-  muitos: "O aparelho não aceitou tantos vídeos de uma vez. Use «Salvar todos na galeria».",
+  "grande-demais": "O vídeo passa do limite de 50 MB do compartilhamento do navegador. Use «Salvar no celular» e compartilhe pela galeria, ou crie a versão leve.",
+  muitos: "O aparelho não aceitou tantos vídeos de uma vez. Use «Salvar todos no celular».",
   erro: "Não foi possível compartilhar agora. Tente de novo ou use Baixar.",
 };
+
+/** Lê o arquivo guardado do começo ao fim (confere que está inteiro) informando o progresso. */
+export async function readWithProgress(blob: Blob, onProgress: (v: number) => void): Promise<void> {
+  const total = blob.size || 1;
+  let got = 0;
+  const reader = blob.stream().getReader();
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    got += value.length;
+    onProgress(Math.min(1, got / total));
+  }
+  onProgress(1);
+}
 
 /**
  * Salva o vídeo no aparelho para aparecer na galeria.

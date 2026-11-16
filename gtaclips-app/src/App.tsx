@@ -1,5 +1,6 @@
 import { AlertTriangle, Clapperboard, FolderOpen, LayoutDashboard, Scissors, Settings as Gear, Sparkles, Youtube } from "lucide-react";
 import { Modal } from "./ui/kit";
+import { inAppBrowser, openInChromeUrl } from "./media/device";
 import { AppProvider, useApp, type Tab } from "./ui/store";
 import Dashboard from "./screens/Dashboard";
 import Create from "./screens/Create";
@@ -28,6 +29,7 @@ export default function App() {
 function Shell() {
   const { tab, go, jobs, toasts, crashed, dismissCrash } = useApp();
   const running = jobs.filter((j) => j.status === "rodando");
+  const inApp = inAppBrowser();
   const Screen = { dashboard: Dashboard, criar: Create, projetos: Projects, editor: Editor, youtube: YouTube, config: Settings }[tab];
   return (
     <div className="app">
@@ -67,6 +69,21 @@ function Shell() {
             <Sparkles size={15} /> Novo vídeo
           </button>
         </header>
+        {inApp && (
+          <div className="banner amber" style={{ margin: "10px 14px 0" }}>
+            <AlertTriangle size={18} />
+            <span>
+              Você está no navegador de dentro do {inApp}: aqui não dá para salvar nem compartilhar vídeos.{" "}
+              {/Android/i.test(navigator.userAgent) ? (
+                <a href={openInChromeUrl()} style={{ color: "#fff", fontWeight: 700 }}>
+                  Abrir no Chrome
+                </a>
+              ) : (
+                "Toque em ⋯ e escolha «Abrir no navegador»."
+              )}
+            </span>
+          </div>
+        )}
         <main className="content" key={tab}>
           <Screen />
         </main>

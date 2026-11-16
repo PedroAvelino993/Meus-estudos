@@ -10,7 +10,8 @@ import { defaultStyle } from "../core/captions";
 import { fmtBytes, fmtDur, fmtTime, safeName, uid } from "../core/format";
 import { db, setSessionSource, sourceFor } from "../media/db";
 import { SHARE_MESSAGE, canShareFiles, downloadBlob, saveToGallery, shareFiles, shareLimit, zipFiles } from "../media/files";
-import { isIOS } from "../media/device";
+import { isIOS, isMobile } from "../media/device";
+import { SaveDialog, type SaveItem } from "../ui/SaveDialog";
 import { useApp, updateClip } from "../ui/store";
 import { Bar, Card, Empty, Head, ScoreBadge, Seg, thumbAt, useThumbs } from "../ui/kit";
 import { Jobs, statusTag } from "./Dashboard";
@@ -264,24 +265,15 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
   };
 
   const exportedCount = p.clips.filter((c) => lastExport(c)).length;
-  const [savingAll, setSavingAll] = useState(false);
-  const saveAll = async () => {
-    setSavingAll(true);
-    try {
-      let n = 0;
-      for (const c of p.clips) {
-        const e = lastExport(c);
-        if (!e) continue;
-        const b = await db.getExportFile(e.id);
-        if (!b) continue;
-        downloadBlob(b, `${String(++n).padStart(2, "0")}-${safeName(c.title)}.mp4`);
-        // Um de cada vez: o celular não se perde com vários downloads juntos
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-      toast(n ? `${n} vídeo(s) enviados para Downloads. Eles aparecem na Galeria/Google Fotos (pasta «Download»). Se o navegador perguntar, permita baixar vários arquivos.` : "Exporte os clipes primeiro.", !n);
-    } finally {
-      setSavingAll(false);
+  const [saveItems, setSaveItems] = useState<SaveItem[] | null>(null);
+  const saveAll = () => {
+    const items: SaveItem[] = [];
+    for (const c of p.clips) {
+      const e = lastExport(c);
+      if (e) items.push({ name: `${String(items.length + 1).padStart(2, "0")}-${safeName(c.title)}.mp4`, load: () => db.getExportFile(e.id) });
     }
+    if (!items.length) return toast("Exporte os clipes primeiro.", true);
+    setSaveItems(items);
   };
 
   if (!p.clips.length) return <Empty>Nenhum clipe. Use «Gerar de novo» ou crie a partir de um momento.</Empty>;
@@ -298,18 +290,19 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
           <Download size={16} /> EXPORTAR VÍDEOS ({p.clips.length})
         </button>
         {!isIOS() && (
-          <button className="btn" disabled={!exportedCount || savingAll} onClick={saveAll}>
-            <Images size={16} /> {savingAll ? "Salvando…" : `Salvar todos na galeria${exportedCount ? ` (${exportedCount})` : ""}`}
+          <button className="btn" disabled={!exportedCount} onClick={saveAll}>
+            <Images size={16} /> Salvar todos no celular{exportedCount ? ` (${exportedCount})` : ""}
           </button>
         )}
-        <button className="btn" disabled={zipping || !p.clips.some((c) => lastExport(c))} onClick={zipAll}>
-          <FileArchive size={16} /> {zipping ? "Montando ZIP…" : "Baixar todos (ZIP)"}
-        </button>
+        {saveItems && <SaveDialog items={saveItems} onClose={() => setSaveItems(null)} />}
+        {!isMobile() && <button className="btn" disabled={zipping || !p.clips.some((c) => lastExport(c))} onClick={zipAll}>
+          <FileArchive size={16} /> {zipping ? "Montando ZIP…" : "Baixar todos em ZIP"}
+        </button>}
       </div>
       {!exportedCount && (
         <div className="banner small">
           <Share2 size={16} />
-          <span>Exporte primeiro. Depois cada clipe ganha os botões «Salvar na galeria» (o vídeo vai para a galeria do celular) e «Compartilhar» (WhatsApp, Telegram, Drive…).</span>
+          <span>Exporte primeiro. Depois cada clipe ganha os botões «Salvar no celular» (o vídeo vai para a pasta Download, que aparece na Galeria) e «Compartilhar» (WhatsApp, Telegram, Drive…).</span>
         </div>
       )}
       {p.clips.map((c, i) => {
@@ -417,22 +410,31 @@ export function ExportButtons({ rec, name, outdated, compact, light, onMakeLight
   };
   const file = `${safeName(name)}.mp4`;
   const tooBig = rec.size > shareLimit();
+  const [saving, setSaving] = useState(false);
+  const shareMain = async () => {
+    const b = await get(rec.id);
+    if (b) await share([{ blob: b, name: file }], name);
+  };
   const canLight = tooBig && !light && !!onMakeLight;
   return (
     <>
       <button
         className="btn sm primary"
         onClick={async () => {
-          const b = await get(rec.id);
-          if (!b) return;
-          const r = await saveToGallery(b, file);
-          if (r === "baixado") toast("Vídeo enviado para Downloads. Ele aparece na Galeria/Google Fotos (pasta «Download»).");
+          // iPhone: o menu do sistema tem «Salvar vídeo» (vai direto para o app Fotos)
+          if (isIOS()) {
+            const b = await get(rec.id);
+            if (b) await saveToGallery(b, file);
+            return;
+          }
+          setSaving(true);
         }}
         title={outdated ? "O clipe mudou depois desta exportação" : ""}
       >
-        <Images size={14} /> {compact ? "Galeria" : `Salvar na galeria (${fmtBytes(rec.size)})`}
+        <Images size={14} /> {compact ? "Salvar" : `Salvar no celular (${fmtBytes(rec.size)})`}
         {outdated ? " · antigo" : ""}
       </button>
+      {saving && <SaveDialog items={[{ name: file, load: () => db.getExportFile(rec.id) }]} onClose={() => setSaving(false)} onShare={tooBig ? undefined : shareMain} />}
       {light ? (
         <button
           className="btn sm"
@@ -459,10 +461,7 @@ export function ExportButtons({ rec, name, outdated, compact, light, onMakeLight
       ) : (
         <button
           className="btn sm"
-          onClick={async () => {
-            const b = await get(rec.id);
-            if (b) await share([{ blob: b, name: file }], name);
-          }}
+          onClick={shareMain}
           title={canShareFiles() ? "WhatsApp, Telegram, Drive…" : "Este navegador não tem menu de compartilhar: o vídeo será baixado"}
         >
           <Share2 size={14} /> Compartilhar

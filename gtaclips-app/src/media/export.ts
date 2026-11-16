@@ -185,17 +185,22 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
       else if (await getFirstEncodableAudioCodec(["opus"], { numberOfChannels: 2, sampleRate: 48000 })) audioCodec = "opus";
     }
 
+    if (audioCodec === "opus") warnings.push("Este navegador não tem o codificador de áudio AAC, então o MP4 saiu com áudio Opus: WhatsApp e Telegram aceitam, mas o Instagram pode recusar. No Chrome do Android isso normalmente não acontece.");
     const canvas: OffscreenCanvas | HTMLCanvasElement = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(W, H) : Object.assign(document.createElement("canvas"), { width: W, height: H });
     const ctx = canvas.getContext("2d", { alpha: false }) as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
     const asm = new BlobAssembler(typeof indexedDB !== "undefined" ? { put: (i, b) => db.putChunk(job, i, b), getAll: () => db.getChunks(job) } : undefined);
     const writable = new WritableStream<StreamTargetChunk>({ write: (chunk) => asm.write(chunk.position, chunk.data) });
-    const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new StreamTarget(writable) });
+    // «Fast start»: o índice do vídeo fica no começo do arquivo. Instagram, WhatsApp e Telegram
+    // recusam ou não pré-visualizam MP4 com o índice no fim. O espaço é reservado de antemão
+    // (sem guardar o vídeo na memória).
+    const output = new Output({ format: new Mp4OutputFormat({ fastStart: "reserve" }), target: new StreamTarget(writable) });
+    const frameBudget = segments.reduce((a, s) => a + Math.max(1, Math.round((s.end - s.start) * fps)), 0);
     const videoSource = new CanvasSource(canvas, { codec: videoCodec, bitrate, keyFrameInterval: 2 });
-    output.addVideoTrack(videoSource, { frameRate: fps });
+    output.addVideoTrack(videoSource, { frameRate: fps, maximumPacketCount: Math.ceil(frameBudget * 1.1) + 60 });
     let audioSource: AudioBufferSource | null = null;
     if (audioCodec) {
       audioSource = new AudioBufferSource({ codec: audioCodec, bitrate: 160_000 });
-      output.addAudioTrack(audioSource);
+      output.addAudioTrack(audioSource, { maximumPacketCount: Math.ceil(((total + 2) * outRate) / 512 * 1.33) + 200 });
     }
     await output.start();
 
