@@ -8,7 +8,7 @@
 // - cada etapa tem limite de tempo: se o decodificador/codificador travar, a exportação para com
 //   uma mensagem clara em vez de congelar o app.
 
-import { AudioBufferSource, CanvasSource, Mp4OutputFormat, Output, StreamTarget, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec, type StreamTargetChunk } from "mediabunny";
+import { AudioBufferSource, CanvasSource, MovOutputFormat, Mp4OutputFormat, Output, StreamTarget, getFirstEncodableAudioCodec, getFirstEncodableVideoCodec, type StreamTargetChunk } from "mediabunny";
 import type { Analysis, Clip, ExportRecord, Segment, SourceInfo } from "../core/types";
 import { actionPath, removeSilences, totalDuration } from "../core/timeline";
 import { uid } from "../core/format";
@@ -17,7 +17,7 @@ import { drawFrame, ensureFonts, outputSize, type FrameState } from "./compose";
 import { breathe, withTimeout } from "./device";
 import { db } from "./db";
 import { MODE_LABEL, readAudio, readFrames } from "./frames";
-import { installAacFix } from "./aacfix";
+import { CANDIDATES, checkPlayback, devicePlan, nextPlan, type Plan } from "./compat";
 
 export interface ExportProgress {
   value: number;
@@ -152,10 +152,36 @@ function resample(src: Float32Array, from: number, to: number): Float32Array {
 
 const FRAME_TIMEOUT = 60_000;
 
+/**
+ * Exporta o clipe. No iPhone/Safari usa o formato que o próprio aparelho comprovadamente abre
+ * (teste de compatibilidade) e confere o arquivo final no player do aparelho; se ele não abrir,
+ * exporta de novo no próximo formato, sozinho.
+ */
 export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | undefined, projectId: string, sourceFps: number, opts: ExportOptions = {}): Promise<ExportResult> {
+  const status = (detail: string, value = 0) => opts.onProgress?.({ value, detail });
+  let plan = await devicePlan((m) => status(m));
+  const tried: string[] = [];
+  for (let attempt = 0; attempt < CANDIDATES.length; attempt++) {
+    const res = await exportOnce(file, clip, analysis, projectId, sourceFps, opts, plan);
+    if (!plan) return res;
+    status("Conferindo se o aparelho abre o vídeo…", 0.99);
+    const r = await checkPlayback(res.blob, !!res.record.audioCodec);
+    if (r !== "ruim") {
+      if (tried.length) res.warnings.push(`O aparelho não abriu o vídeo em ${tried.join(", ")}; ele foi exportado em ${plan.label}, que este aparelho abre.`);
+      if (!plan.audio) res.warnings.push("Este aparelho não conseguiu gravar áudio em nenhum formato, então o vídeo saiu sem som.");
+      return res;
+    }
+    tried.push(plan.label);
+    const np = await nextPlan(plan, (m) => status(m));
+    if (!np) break;
+    status(`O aparelho não abriu o arquivo em ${plan.label}; exportando de novo em ${np.label}…`);
+    plan = np;
+  }
+  throw new Error(`Este aparelho não conseguiu abrir o vídeo exportado em nenhum formato (${tried.join(", ")}). Mande o diagnóstico (Configurações → Diagnóstico) para eu ver o que falta.`);
+}
+
+async function exportOnce(file: Blob, clip: Clip, analysis: Analysis | undefined, projectId: string, sourceFps: number, opts: ExportOptions, plan: Plan | null): Promise<ExportResult> {
   const report = (value: number, detail: string) => opts.onProgress?.({ value, detail });
-  // Safari: corrige o AAC para o vídeo tocar no iPhone (Fotos, WhatsApp, Instagram)
-  installAacFix(localStorage.getItem("gca:aacfix") === "1");
   await ensureFonts();
   const light = !!opts.light;
   const { width: W, height: H } = outputSize(clip.format, light ? 720 : opts.short ?? 1080);
@@ -177,9 +203,22 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
     if (!vt) throw new Error("Sem faixa de vídeo");
     const at = await input.getPrimaryAudioTrack();
     const canDecodeAudio = !!at && (await at.canDecode());
-    let audioCodec: "aac" | "opus" | null = null;
+    let audioCodec: "aac" | "opus" | "pcm-s16" | null = null;
     let outRate = 48000;
-    if (canDecodeAudio && typeof AudioEncoder !== "undefined") {
+    if (plan) {
+      // Formato escolhido pelo teste no próprio aparelho
+      const srcRate = at?.sampleRate ?? 48000;
+      if (!canDecodeAudio || !plan.audio) audioCodec = null;
+      else if (plan.audio === "pcm-s16") {
+        audioCodec = "pcm-s16";
+        outRate = srcRate === 44100 ? 44100 : 48000;
+      } else if (typeof AudioEncoder !== "undefined") {
+        if (plan.audio === "aac" && (srcRate === 44100 || srcRate === 48000) && (await getFirstEncodableAudioCodec(["aac"], { numberOfChannels: 2, sampleRate: srcRate }))) {
+          audioCodec = "aac";
+          outRate = srcRate;
+        } else if (await getFirstEncodableAudioCodec([plan.audio], { numberOfChannels: 2, sampleRate: 48000 })) audioCodec = plan.audio;
+      }
+    } else if (canDecodeAudio && typeof AudioEncoder !== "undefined") {
       const srcRate = at!.sampleRate;
       if ((srcRate === 44100 || srcRate === 48000) && (await getFirstEncodableAudioCodec(["aac"], { numberOfChannels: 2, sampleRate: srcRate }))) {
         audioCodec = "aac";
@@ -188,7 +227,7 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
       else if (await getFirstEncodableAudioCodec(["opus"], { numberOfChannels: 2, sampleRate: 48000 })) audioCodec = "opus";
     }
 
-    if (audioCodec === "opus") warnings.push("Este navegador não tem o codificador de áudio AAC, então o MP4 saiu com áudio Opus: WhatsApp e Telegram aceitam, mas o Instagram pode recusar. No Chrome do Android isso normalmente não acontece.");
+    if (audioCodec === "opus" && !plan) warnings.push("Este navegador não tem o codificador de áudio AAC, então o MP4 saiu com áudio Opus: WhatsApp e Telegram aceitam, mas o Instagram pode recusar. No Chrome do Android isso normalmente não acontece.");
     const canvas: OffscreenCanvas | HTMLCanvasElement = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(W, H) : Object.assign(document.createElement("canvas"), { width: W, height: H });
     const ctx = canvas.getContext("2d", { alpha: false }) as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
     const asm = new BlobAssembler(typeof indexedDB !== "undefined" ? { put: (i, b) => db.putChunk(job, i, b), getAll: () => db.getChunks(job) } : undefined);
@@ -196,7 +235,9 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
     // «Fast start»: o índice do vídeo fica no começo do arquivo. Instagram, WhatsApp e Telegram
     // recusam ou não pré-visualizam MP4 com o índice no fim. O espaço é reservado de antemão
     // (sem guardar o vídeo na memória).
-    const output = new Output({ format: new Mp4OutputFormat({ fastStart: "reserve" }), target: new StreamTarget(writable) });
+    const mov = plan?.container === "mov";
+    const mime = mov ? "video/quicktime" : "video/mp4";
+    const output = new Output({ format: mov ? new MovOutputFormat({ fastStart: "reserve" }) : new Mp4OutputFormat({ fastStart: "reserve" }), target: new StreamTarget(writable) });
     const frameBudget = segments.reduce((a, s) => a + Math.max(1, Math.round((s.end - s.start) * fps)), 0);
     const videoSource = new CanvasSource(canvas, { codec: videoCodec, bitrate, keyFrameInterval: 2 });
     output.addVideoTrack(videoSource, { frameRate: fps, maximumPacketCount: Math.ceil(frameBudget * 1.1) + 60 });
@@ -363,7 +404,7 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
 
     report(0.97, "Finalizando o arquivo MP4…");
     await withTimeout(output.finalize(), 120_000, "A finalização do arquivo");
-    const blob = await asm.finish("video/mp4");
+    const blob = await asm.finish(mime);
     // Os blocos temporários só são apagados depois que o arquivo final for salvo
     pendingChunkJobs.add(job);
     const record: ExportRecord = {
@@ -379,7 +420,7 @@ export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | un
       fps,
       videoCodec,
       audioCodec,
-      mime: "video/mp4",
+      mime,
       ...(light ? { light: true } : {}),
     };
     report(1, "Exportação concluída");

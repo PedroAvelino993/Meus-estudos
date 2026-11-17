@@ -29,12 +29,20 @@ export function stripAdts(d: Uint8Array): Uint8Array {
 /** Navegadores com o motor do Safari (todo navegador do iPhone usa esse motor). */
 export function isWebKitEngine(): boolean {
   if (typeof navigator === "undefined") return false;
+  // Só para testes automáticos: simula o motor do Safari
+  if (typeof localStorage !== "undefined" && localStorage.getItem("gca:forceWebkit") === "1") return true;
   const ua = navigator.userAgent;
   if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) return true;
   return /AppleWebKit/i.test(ua) && /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Android/i.test(ua);
 }
 
 let installed = false;
+let enabled = true;
+
+/** Liga/desliga a correção (o teste de compatibilidade experimenta com e sem). */
+export function setAacFix(on: boolean) {
+  enabled = on;
+}
 
 /** Troca o AudioEncoder global por uma versão que corrige a saída AAC (só no motor do Safari). */
 export function installAacFix(force = false) {
@@ -49,7 +57,7 @@ export function installAacFix(force = false) {
         error: init.error,
         output: (chunk, meta) => {
           const cfg = state.cfg;
-          if (!cfg || !cfg.codec.startsWith("mp4a")) return init.output(chunk, meta);
+          if (!enabled || !cfg || !cfg.codec.startsWith("mp4a")) return init.output(chunk, meta);
           const raw = new Uint8Array(chunk.byteLength);
           chunk.copyTo(raw);
           const data = stripAdts(raw);

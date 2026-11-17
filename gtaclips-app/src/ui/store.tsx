@@ -354,7 +354,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           setExports(await db.listExports());
           finishJob(id);
-          toast(light ? "Versão leve pronta! Toque em «Compartilhar» de novo." : clipIds.length > 1 ? "Exportação concluída! Toque em «Salvar no celular» ou «Compartilhar» em cada clipe." : "Exportação concluída! Toque em «Salvar no celular» ou «Compartilhar».");
+          toast(light ? "Versão leve pronta! Toque em «Compartilhar» de novo." : clipIds.length > 1 ? "Exportação concluída! Toque em «Salvar» ou «Compartilhar» em cada clipe." : "Exportação concluída! Toque em «Salvar» ou «Compartilhar».");
         } catch (e) {
           logError("exportação", e);
           finishJob(id, e);

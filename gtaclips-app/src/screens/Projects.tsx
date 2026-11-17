@@ -253,7 +253,7 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
       const e = lastExport(c);
       if (!e) continue;
       const b = await db.getExportFile(e.id);
-      if (b) files.push({ name: `${String(files.length + 1).padStart(2, "0")}-${safeName(c.title)}.mp4`, blob: b });
+      if (b) files.push({ name: `${String(files.length + 1).padStart(2, "0")}-${safeName(c.title)}.${extOf(e)}`, blob: b });
     }
     if (!files.length) return toast("Exporte os clipes primeiro.", true);
     setZipping(true);
@@ -270,7 +270,7 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
     const items: SaveItem[] = [];
     for (const c of p.clips) {
       const e = lastExport(c);
-      if (e) items.push({ name: `${String(items.length + 1).padStart(2, "0")}-${safeName(c.title)}.mp4`, load: () => db.getExportFile(e.id) });
+      if (e) items.push({ name: `${String(items.length + 1).padStart(2, "0")}-${safeName(c.title)}.${extOf(e)}`, load: () => db.getExportFile(e.id) });
     }
     if (!items.length) return toast("Exporte os clipes primeiro.", true);
     setSaveItems(items);
@@ -387,6 +387,11 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
   );
 }
 
+/** Extensão do arquivo exportado (no iPhone pode ser .mov, o formato nativo dele). */
+export function extOf(r: ExportRecord) {
+  return r.mime === "video/quicktime" ? "mov" : "mp4";
+}
+
 /** Abre o menu de compartilhar do aparelho; se não houver, baixa o arquivo. */
 export function useShare() {
   const { toast } = useApp();
@@ -402,7 +407,7 @@ export function useShare() {
 /** Salvar no celular (principal) e Compartilhar; no Android, acima de 50 MB oferece a versão leve. */
 export function ExportButtons({ rec, name, outdated, compact, light, onMakeLight, busy }: { rec: ExportRecord; name: string; outdated: boolean; compact?: boolean; light?: ExportRecord; onMakeLight?: () => void; busy?: boolean }) {
   const { toast } = useApp();
-  const file = `${safeName(name)}.mp4`;
+  const file = `${safeName(name)}.${extOf(rec)}`;
   const tooBig = rec.size > shareLimit();
   const ios = isIOS();
   const [dialog, setDialog] = useState<null | { kind: "salvar" } | { kind: "share"; purpose: "fotos" | "compartilhar"; id: string; name: string }>(null);
@@ -422,7 +427,7 @@ export function ExportButtons({ rec, name, outdated, compact, light, onMakeLight
       {dialog?.kind === "salvar" && <SaveDialog items={[{ name: file, load: () => db.getExportFile(rec.id) }]} onClose={() => setDialog(null)} onShare={tooBig ? undefined : shareMain} />}
       {dialog?.kind === "share" && <ShareDialog item={{ name: dialog.name, load: () => db.getExportFile(dialog.id) }} purpose={dialog.purpose} onClose={() => setDialog(null)} />}
       {light ? (
-        <button className="btn sm" onClick={() => setDialog({ kind: "share", purpose: "compartilhar", id: light.id, name: `${safeName(name)}-leve.mp4` })} title="Versão 720p menor que 50 MB">
+        <button className="btn sm" onClick={() => setDialog({ kind: "share", purpose: "compartilhar", id: light.id, name: `${safeName(name)}-leve.${extOf(light)}` })} title="Versão 720p menor que 50 MB">
           <Share2 size={14} /> Compartilhar (leve, {fmtBytes(light.size)})
         </button>
       ) : canLight ? (

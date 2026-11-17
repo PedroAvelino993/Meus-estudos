@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Brain, Bug, Copy, Cpu, ExternalLink, Feather, HardDrive, KeyRound, Trash2, Youtube } from "lucide-react";
 import { clearErrorLog, deviceSummary, errorLog, lowMemory } from "../media/device";
 import { MODE_LABEL, preferredDecode, resetDecodePreference } from "../media/frames";
+import { CANDIDATES, forgetPlan, storedPlanInfo } from "../media/compat";
 import { WHISPER_MODELS } from "../media/ai";
 import { capabilities, type Capabilities } from "../media/probe";
 import { claudeAvailable, claudeKey, setClaudeKey, testClaude } from "../media/claude";
@@ -25,6 +26,7 @@ export default function Settings() {
   const [safe, setSafe] = useState(localStorage.getItem("gca:safe") === "1");
   const [errors, setErrors] = useState(errorLog);
   const [decodeMode, setDecodeMode] = useState(preferredDecode);
+  const [planInfo, setPlanInfo] = useState(storedPlanInfo);
   useEffect(() => {
     capabilities().then(setCaps);
     storageEstimate().then(setStorage);
@@ -269,6 +271,23 @@ export default function Settings() {
                 </button>
               )}
             </div>
+            {planInfo && (
+              <div className="row between wrap">
+                <span>
+                  Formato de exportação deste aparelho: <b>{CANDIDATES.find((c) => c.id === planInfo.id)?.label ?? "a definir"}</b>
+                </span>
+                <button
+                  className="btn sm ghost"
+                  onClick={() => {
+                    forgetPlan();
+                    setPlanInfo(null);
+                    toast("Na próxima exportação o app testa de novo qual formato este aparelho abre.");
+                  }}
+                >
+                  Testar de novo
+                </button>
+              </div>
+            )}
             {errors.length ? (
               <div className="list" style={{ maxHeight: 240, overflowY: "auto" }}>
                 {errors.map((e, i) => (
@@ -285,7 +304,7 @@ export default function Settings() {
               <button
                 className="btn sm"
                 onClick={() => {
-                  const txt = [`GTA Clips AI — diagnóstico (${new Date().toLocaleString("pt-BR")})`, deviceSummary(), `Leitura de vídeo: ${decodeMode} · Modo leve: ${lowMemory() ? "sim" : "não"} · IA de visão: ${settings.useVision ? "sim" : "não"} · exportação ${settings.exportQuality}p`, caps ? `WebCodecs ${caps.webcodecs} · vídeo ${caps.videoCodec} · áudio ${caps.audioCodec} · WebGPU ${caps.webgpu}` : "", ...errors.map((e) => `${new Date(e.at).toISOString()} [${e.where}] ${e.message}\n${e.stack ?? ""}`)].join("\n");
+                  const txt = [`GTA Clips AI — diagnóstico (${new Date().toLocaleString("pt-BR")})`, deviceSummary(), `Formato: ${JSON.stringify(planInfo ?? "padrão")} · Leitura de vídeo: ${decodeMode} · Modo leve: ${lowMemory() ? "sim" : "não"} · IA de visão: ${settings.useVision ? "sim" : "não"} · exportação ${settings.exportQuality}p`, caps ? `WebCodecs ${caps.webcodecs} · vídeo ${caps.videoCodec} · áudio ${caps.audioCodec} · WebGPU ${caps.webgpu}` : "", ...errors.map((e) => `${new Date(e.at).toISOString()} [${e.where}] ${e.message}\n${e.stack ?? ""}`)].join("\n");
                   navigator.clipboard?.writeText(txt).then(
                     () => toast("Diagnóstico copiado."),
                     () => toast("Não foi possível copiar.", true),
