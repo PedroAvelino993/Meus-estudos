@@ -468,18 +468,21 @@ export function generateScenes(moments: Moment[], intensity: number[], settings:
   if (!moments.length) return { clips: [], notes: ["A análise não encontrou momentos neste vídeo."] };
   const n = Math.max(1, Math.ceil(duration));
   const L = Math.min(settings.duration, duration);
-  const minL = Math.max(5, L * 0.7);
-  const maxL = L * 1.3;
+  // Duração flexível: perto da pedida, um pouco menos ou um pouco mais para fechar a fala
+  const minL = Math.max(5, L * 0.8);
+  const maxL = L * 1.25;
   const pauses = findPauses(signals.audio, signals.cuts);
 
-  // Trechos aproveitáveis: tudo menos tempo morto longo (≥ 6 s de menu, carregamento, espera…)
+  // Só telas que não são jogo separam as partes (menu, mapa, carregamento). Andar, conversar ou
+  // ficar parado fazem parte da cena e continuam dentro da parte.
+  const HARD = new Set(["menu", "carregamento", "mapa"]);
   const deadRuns: [number, number][] = [];
-  for (const m of [...moments].filter((x) => x.dead).sort((x, y) => x.start - y.start)) {
+  for (const m of [...moments].filter((x) => x.dead && HARD.has(x.category)).sort((x, y) => x.start - y.start)) {
     const last = deadRuns[deadRuns.length - 1];
     if (last && m.start <= last[1] + 0.5) last[1] = Math.max(last[1], m.end);
     else deadRuns.push([m.start, m.end]);
   }
-  const longDead = deadRuns.filter(([a0, b0]) => b0 - a0 >= 6);
+  const longDead = deadRuns.filter(([a0, b0]) => b0 - a0 >= 4);
   const spans: [number, number][] = [];
   let cur = 0;
   for (const [a0, b0] of longDead) {
@@ -525,10 +528,11 @@ export function generateScenes(moments: Moment[], intensity: number[], settings:
     let end: number;
     let next: number;
     const rem = limit - cursor;
-    // Se depois de cortar sobraria uma parte curta demais, divide o resto em duas partes parecidas
-    const target = rem < L + minL ? rem / 2 : L;
-    const lo = Math.min(minL, target * 0.8);
-    if (rem <= maxL || target < 5) {
+    // Sobra pouco depois desta parte? Então esta parte vai até o fim do trecho (um pouco mais longa)
+    // ou o resto vira duas partes parecidas — nunca uma parte curtinha no final.
+    const target = rem <= L * 1.4 ? rem : rem < L + minL ? rem / 2 : L;
+    const lo = Math.min(minL, target * 0.85);
+    if (rem <= L * 1.4 || target < 5) {
       // O trecho acaba antes de um tempo morto: a parte vai até ele (sem cortar no meio)
       end = limit;
       next = limit;

@@ -269,3 +269,23 @@ describe("modo partes sem cortes", () => {
     }
   });
 });
+
+describe("partes com cenas de caminhada/espera no meio", () => {
+  it("não quebra a parte quando o personagem só está andando ou parado (só menu/carregamento separam)", () => {
+    const settings: GenerateSettings = { mode: "cena", count: 4, duration: 60, format: "1:1", reframe: "desfocado", fps: 30, captions: true, captionLang: "orig", captionStyle: "basica", removeSilence: false, context: 3 };
+    const mk = (id: string, start: number, end: number, cat: string, dead: boolean) => ({ id, start, end, category: cat, score: dead ? 8 : 70, factors: {} as never, description: "", thumbT: start, dead, peakT: (start + end) / 2 }) as never;
+    // Alterna ação e caminhada/espera a cada 20 s (como num gameplay real)
+    const moments = Array.from({ length: 15 }, (_, i) => mk(`m${i}`, i * 20, i * 20 + 20, i % 2 ? (i % 4 === 1 ? "andando" : "parado") : "perseguicao", i % 2 === 1));
+    const gaps = Array.from({ length: 30 }, (_, i) => [i * 10 + 6, i * 10 + 7.2]);
+    const rms = Array.from({ length: 300 * 4 }, (_, i) => (gaps.some(([a, b]) => i / 4 >= a && i / 4 < b) ? 0.02 : 0.55));
+    const intensity = Array.from({ length: 300 }, () => 0.4);
+    const r = generate(moments, intensity, settings, 300, { audio: { rate: 4, rms }, cuts: [] });
+    expect(r.clips.length).toBe(4);
+    for (const c of r.clips) {
+      const len = c.segments[0].end - c.segments[0].start;
+      expect(len).toBeGreaterThanOrEqual(48);
+      expect(len).toBeLessThanOrEqual(84);
+    }
+    for (let i = 1; i < r.clips.length; i++) expect(r.clips[i].segments[0].start - r.clips[i - 1].segments[0].end).toBeLessThan(1.5);
+  });
+});
