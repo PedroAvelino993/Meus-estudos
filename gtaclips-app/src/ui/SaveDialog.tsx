@@ -164,6 +164,10 @@ export function ShareDialog({ item, purpose, onClose }: { item: SaveItem; purpos
       }
       // Arquivo na memória: o menu do sistema recebe na hora, sem ficar girando
       file.current = new File(parts as BlobPart[], item.name, { type: "video/mp4" });
+      // iPhone: confere se o próprio iPhone consegue abrir o vídeo (senão o menu trava girando)
+      if (isIOS() && !(await playable(file.current))) {
+        throw new Error("O iPhone não consegue abrir este arquivo de vídeo (provavelmente foi exportado antes da correção do áudio do Safari). Toque em «Exportar de novo» neste clipe e depois salve outra vez.");
+      }
       const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
       if (typeof nav.share !== "function" || (nav.canShare && !nav.canShare({ files: [file.current] }))) {
         throw new Error("Este navegador não tem o menu de compartilhar arquivos. Abra o site no Safari (iPhone) ou no Chrome (Android).");
@@ -188,14 +192,23 @@ export function ShareDialog({ item, purpose, onClose }: { item: SaveItem; purpos
   const open = () => {
     const f = file.current;
     if (!f) return;
+    if (shareBusy) {
+      setPhase({ kind: "erro", message: "O menu de compartilhar anterior ainda está aberto ou travou. Feche o app (ou recarregue a página) e tente de novo." });
+      return;
+    }
+    shareBusy = true;
     setPhase({ kind: "abrindo" });
     // Chamado direto no toque (sem esperar nada antes), como o iPhone exige
     navigator
       .share({ files: [f] })
       .then(() => setPhase({ kind: "feito" }))
+      .finally(() => {
+        shareBusy = false;
+      })
       .catch((e) => {
         const n = e instanceof DOMException ? e.name : "";
         if (n === "AbortError") setPhase({ kind: "pronto" });
+        else if (n === "InvalidStateError") setPhase({ kind: "erro", message: "O menu de compartilhar anterior ainda está aberto ou travou. Feche o app (ou recarregue a página) e tente de novo." });
         else {
           logError("compartilhar", e);
           setPhase({ kind: "erro", message: n === "NotAllowedError" ? "O aparelho recusou o arquivo (pode ser grande demais para este app). Tente «Salvar» e compartilhe pela galeria." : `Não foi possível compartilhar (${e instanceof Error ? e.message : e}).` });
@@ -265,6 +278,34 @@ export function ShareDialog({ item, purpose, onClose }: { item: SaveItem; purpos
       </div>
     </Modal>
   );
+}
+
+let shareBusy = false;
+
+/** O navegador consegue abrir o vídeo? (no iPhone usa o mesmo leitor do Fotos e do menu de compartilhar) */
+function playable(f: Blob): Promise<boolean> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(f);
+    const v = document.createElement("video");
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = "metadata";
+    let done = false;
+    const end = (ok: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      v.removeAttribute("src");
+      v.load();
+      URL.revokeObjectURL(url);
+      resolve(ok);
+    };
+    // Sem resposta em 15 s: não bloqueia (deixa tentar)
+    const t = setTimeout(() => end(true), 15_000);
+    v.onloadedmetadata = () => end(v.duration > 0 && v.videoWidth > 0);
+    v.onerror = () => end(false);
+    v.src = url;
+  });
 }
 
 function InAppHelp({ name, onTry }: { name: string; onTry: () => void }) {

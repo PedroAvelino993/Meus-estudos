@@ -17,6 +17,7 @@ import { drawFrame, ensureFonts, outputSize, type FrameState } from "./compose";
 import { breathe, withTimeout } from "./device";
 import { db } from "./db";
 import { MODE_LABEL, readAudio, readFrames } from "./frames";
+import { installAacFix } from "./aacfix";
 
 export interface ExportProgress {
   value: number;
@@ -153,6 +154,8 @@ const FRAME_TIMEOUT = 60_000;
 
 export async function exportClip(file: Blob, clip: Clip, analysis: Analysis | undefined, projectId: string, sourceFps: number, opts: ExportOptions = {}): Promise<ExportResult> {
   const report = (value: number, detail: string) => opts.onProgress?.({ value, detail });
+  // Safari: corrige o AAC para o vídeo tocar no iPhone (Fotos, WhatsApp, Instagram)
+  installAacFix(localStorage.getItem("gca:aacfix") === "1");
   await ensureFonts();
   const light = !!opts.light;
   const { width: W, height: H } = outputSize(clip.format, light ? 720 : opts.short ?? 1080);
