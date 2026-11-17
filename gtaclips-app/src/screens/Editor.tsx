@@ -553,7 +553,7 @@ function ImagePanel({ clip, change }: { clip: Clip; change: (c: Clip) => void })
   );
 }
 
-function CaptionPanel({ clip, project, change, busy, busyValue, onGenerate }: { clip: Clip; project: Project; change: (c: Clip) => void; busy: string | null; busyValue: number; onGenerate: (target: string) => void }) {
+function CaptionPanel({ clip, change, busy, busyValue, onGenerate }: { clip: Clip; project: Project; change: (c: Clip) => void; busy: string | null; busyValue: number; onGenerate: (target: string) => void }) {
   const { toast } = useApp();
   const st = clip.captionStyle;
   const setStyle = (p: Partial<typeof st>) => change({ ...clip, captionStyle: { ...st, ...p } });
@@ -595,9 +595,8 @@ function CaptionPanel({ clip, project, change, busy, busyValue, onGenerate }: { 
             <Bar value={busyValue} anim />
           </div>
         )}
-        {!project.source.audioCodec && <div className="banner small">Este vídeo não tem áudio decodificável.</div>}
         <div className="row wrap">
-          <button className="btn sm primary" disabled={!!busy || !project.source.audioCodec} onClick={() => onGenerate(clip.captionLang)}>
+          <button className="btn sm primary" disabled={!!busy} onClick={() => onGenerate(clip.captionLang)}>
             <Captions size={14} /> {clip.captions.length ? "Refazer legendas" : "Gerar legendas automáticas"}
           </button>
           <label className="row small">

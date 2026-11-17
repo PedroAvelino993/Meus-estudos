@@ -128,7 +128,7 @@ export default function Create() {
                 <b>{fmtBytes(info.size)}</b>
               </div>
             </div>
-            {!info.audioCodec && <p className="tiny muted" style={{ marginTop: 8 }}>Sem áudio decodificável: a análise usa só a imagem e as legendas ficam indisponíveis.</p>}
+            {!info.audioCodec && <p className="tiny muted" style={{ marginTop: 8 }}>Este vídeo não tem áudio: a análise usa só a imagem e não há legendas.</p>}
             <p className="tiny muted" style={{ marginTop: 8 }}>Vídeo: {describeSource(info)}</p>
             {check === "testando" && <div className="banner small" style={{ marginTop: 8 }}>Testando se este aparelho consegue ler o vídeo…</div>}
             {check && check !== "testando" && check.ok && check.mode === "hardware" && <div className="banner small" style={{ marginTop: 8 }}>✓ Este aparelho lê o vídeo normalmente.</div>}

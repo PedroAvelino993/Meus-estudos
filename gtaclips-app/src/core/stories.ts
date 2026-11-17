@@ -482,14 +482,30 @@ export function generateScenes(moments: Moment[], intensity: number[], settings:
     if (last && m.start <= last[1] + 0.5) last[1] = Math.max(last[1], m.end);
     else deadRuns.push([m.start, m.end]);
   }
-  const longDead = deadRuns.filter(([a0, b0]) => b0 - a0 >= 4);
-  const spans: [number, number][] = [];
+  // Carregamento de verdade: longo E sem ninguém falando. Cena escura com conversa (noite, interior)
+  // às vezes parece «tela preta» para a análise — essas não podem quebrar a parte.
+  const env = signals.audio;
+  const med = env && env.rms.length ? [...env.rms].sort((x, y) => x - y)[Math.floor(env.rms.length / 2)] : 0;
+  const quiet = (a0: number, b0: number) => {
+    if (!env || !env.rms.length) return true;
+    const i0 = Math.floor(a0 * env.rate);
+    const i1 = Math.min(env.rms.length, Math.ceil(b0 * env.rate));
+    // Tem fala/som ativo em boa parte do trecho? Então é cena (conversa no escuro), não carregamento
+    let active = 0;
+    for (let i = i0; i < i1; i++) if (env.rms[i] > med * 0.6) active++;
+    return i1 > i0 ? active / (i1 - i0) <= 0.25 : true;
+  };
+  const longDead = deadRuns.filter(([a0, b0]) => (b0 - a0 >= 15 && quiet(a0, b0)) || b0 - a0 >= 40);
+  let spans: [number, number][] = [];
   let cur = 0;
   for (const [a0, b0] of longDead) {
     if (a0 - cur >= 5) spans.push([cur, a0]);
     cur = Math.max(cur, b0);
   }
   if (duration - cur >= 5) spans.push([cur, duration]);
+  // Trechos curtos entre carregamentos não viram partes curtinhas (só se for o único material)
+  const bigSpans = spans.filter(([a0, b0]) => b0 - a0 >= Math.min(L * 0.6, duration * 0.5));
+  if (bigSpans.length) spans = bigSpans;
   if (!spans.length) return { clips: [], notes: ["O vídeo é quase todo tempo morto (menus, carregamentos); não há trecho para virar clipe."] };
 
   // Interesse por segundo (para escolher onde começar quando sobra material)
@@ -533,9 +549,14 @@ export function generateScenes(moments: Moment[], intensity: number[], settings:
     const target = rem <= L * 1.4 ? rem : rem < L + minL ? rem / 2 : L;
     const lo = Math.min(minL, target * 0.85);
     if (rem <= L * 1.4 || target < 5) {
-      // O trecho acaba antes de um tempo morto: a parte vai até ele (sem cortar no meio)
+      // O trecho acaba antes de um carregamento/menu: a parte vai até ele, terminando na última
+      // pausa da fala antes dele (se houver uma nos últimos 12 s)
       end = limit;
       next = limit;
+      if (limit < duration - 0.5) {
+        const lastPause = pauses.filter((p) => p.a >= limit - 12 && p.a + 0.4 <= limit && p.a + 0.4 - cursor >= Math.min(lo, rem * 0.7)).pop();
+        if (lastPause) end = Math.min(lastPause.b, lastPause.a + 0.4);
+      }
     } else {
       // Divide numa pausa perto da duração pedida (melhor pausa = mais longa / com corte de cena)
       let best: { end: number; next: number; score: number } | null = null;

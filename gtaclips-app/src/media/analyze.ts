@@ -1,14 +1,15 @@
 // Análise do vídeo inteiro: lê quadros (nos quadros-chave, muito rápido), mede imagem e som,
 // pede ao modelo de visão para reconhecer o que acontece e monta a lista de momentos.
 
-import { EncodedPacketSink } from "mediabunny";
+import { EncodedPacketSink, type InputAudioTrack } from "mediabunny";
 import { MODE_LABEL, readAudio, readFrames } from "./frames";
 import type { Analysis, Category, Sample, SourceInfo } from "../core/types";
 import { frameStats, normalizeEnvelope } from "../core/features";
 import { buildMoments, buildTimeline, deadSeconds } from "../core/moments";
 import { openInput } from "./probe";
 import { classifyFrames, loadVision, type ModelProgress } from "./ai";
-import { breathe, withTimeout } from "./device";
+import { breathe, logError, withTimeout } from "./device";
+import { decodeRangeNative } from "./nativeaudio";
 
 export interface AnalyzeProgress {
   phase: "preparando" | "modelo" | "imagens" | "som" | "momentos";
@@ -197,7 +198,7 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
     // ---------- Som ----------
     let audio: Analysis["audio"] = null;
     const at = await input.getPrimaryAudioTrack();
-    if (at && (await at.canDecode())) try {
+    if (at && (await at.canDecode().catch(() => false))) try {
       const rate = 4;
       const values: number[] = [];
       let acc = 0;
@@ -229,9 +230,19 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
       audio = { rate, rms: normalizeEnvelope(values) };
     } catch (e) {
       if (opts.signal?.aborted) throw e;
-      // Sem o som a análise continua (só com a imagem), em vez de falhar inteira
+      logError("áudio da análise (WebCodecs)", e);
       audio = null;
-      notes.push(`${e instanceof Error ? e.message : e} A análise usou só a imagem.`);
+    }
+    // iPhone e outros: o decodificador do navegador falhou → decodificador nativo do aparelho, em pedaços
+    if (at && !audio) {
+      try {
+        audio = await nativeEnvelope(at, duration, opts.signal, (v) => report({ phase: "som", value: v, detail: `Ouvindo o áudio: ${Math.round(v * 100)}%` }));
+      } catch (e) {
+        if (opts.signal?.aborted) throw e;
+        logError("áudio da análise (nativo)", e);
+        // Sem o som a análise continua (só com a imagem), em vez de falhar inteira
+        notes.push(`O aparelho não conseguiu ler o áudio (${e instanceof Error ? e.message : e}). A análise usou só a imagem e as divisões das partes não acham as pausas da fala.`);
+      }
     }
     report({ phase: "momentos", value: 0.5, detail: "Identificando momentos e montando histórias…" });
     // Leitura parcial: a análise (e os clipes) ficam só na parte que o aparelho conseguiu ler
@@ -249,4 +260,49 @@ export async function analyzeVideo(file: Blob, duration: number, opts: AnalyzeOp
 /** Intensidade por segundo (para o modo história contínua e o reenquadramento). */
 export function intensityOf(analysis: Analysis, duration: number): number[] {
   return buildTimeline(analysis.samples, analysis.audio, duration).intensity;
+}
+
+/** Volume do áudio 4×/s pelo decodificador nativo do aparelho (em pedaços de 60 s). */
+export async function nativeEnvelope(at: InputAudioTrack, duration: number, signal?: AbortSignal, onProgress?: (v: number) => void): Promise<NonNullable<Analysis["audio"]>> {
+  const rate = 4;
+  const values: number[] = [];
+  for (let a = 0; a < duration; a += 60) {
+    checkAbort(signal);
+    onProgress?.(a / duration);
+    const b = Math.min(duration, a + 60);
+    const r = await decodeRangeNative(at, a, b);
+    const need = Math.round(b * rate);
+    if (r) {
+      const win = Math.max(1, Math.round(r.rate / rate));
+      const len = r.data[0].length;
+      while (values.length < need) {
+        // Janela de 1/4 s que começa no instante values.length / rate
+        const i0 = Math.round((values.length / rate - r.t0) * r.rate);
+        if (i0 + win > len) break;
+        let acc = 0;
+        for (let k = Math.max(0, i0); k < i0 + win; k++) {
+          let v = 0;
+          for (const ch of r.data) v += ch[k];
+          v /= r.data.length;
+          acc += v * v;
+        }
+        values.push(Math.sqrt(acc / win));
+      }
+    }
+    while (values.length < need) values.push(values[values.length - 1] ?? 0);
+    await breathe();
+  }
+  return { rate, rms: normalizeEnvelope(values) };
+}
+
+/** Lê só o áudio de um vídeo já analisado (projetos antigos em que o áudio não foi lido). */
+export async function envelopeForFile(file: Blob, duration: number): Promise<Analysis["audio"]> {
+  const input = openInput(file);
+  try {
+    const at = await input.getPrimaryAudioTrack();
+    if (!at) return null;
+    return await nativeEnvelope(at, duration);
+  } finally {
+    input.dispose();
+  }
 }

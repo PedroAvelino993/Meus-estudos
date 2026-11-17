@@ -257,7 +257,7 @@ describe("modo partes sem cortes", () => {
       if (sameScene) {
         expect(inGap(prev.end)).toBe(true);
         expect(inGap(cur.start)).toBe(true);
-      } else expect(prev.end).toBeCloseTo(160, 0);
+      } else expect(inGap(prev.end) || Math.abs(prev.end - 160) < 0.6).toBe(true);
     }
   });
 
@@ -287,5 +287,19 @@ describe("partes com cenas de caminhada/espera no meio", () => {
       expect(len).toBeLessThanOrEqual(84);
     }
     for (let i = 1; i < r.clips.length; i++) expect(r.clips[i].segments[0].start - r.clips[i - 1].segments[0].end).toBeLessThan(1.5);
+  });
+});
+
+describe("cena escura com conversa marcada como carregamento", () => {
+  it("não quebra a parte nem cria parte curtinha", () => {
+    const settings: GenerateSettings = { mode: "cena", count: 3, duration: 60, format: "1:1", reframe: "desfocado", fps: 30, captions: true, captionLang: "orig", captionStyle: "basica", removeSilence: false, context: 3 };
+    const mk = (id: string, start: number, end: number, cat: string, dead: boolean) => ({ id, start, end, category: cat, score: dead ? 8 : 70, factors: {} as never, description: "", thumbT: start, dead, peakT: (start + end) / 2 }) as never;
+    // 0–50 ação, 50–70 «carregamento» (na verdade noite com conversa), 70–175 ação, 175–180 ação curta
+    const moments = [mk("a", 0, 50, "perseguicao", false), mk("b", 50, 70, "carregamento", true), mk("c", 70, 180, "perseguicao", false)];
+    const gaps = Array.from({ length: 18 }, (_, i) => [i * 10 + 6, i * 10 + 7.2]);
+    const rms = Array.from({ length: 180 * 4 }, (_, i) => (gaps.some(([a, b]) => i / 4 >= a && i / 4 < b) ? 0.02 : 0.55));
+    const r = generate(moments, Array(180).fill(0.4), settings, 180, { audio: { rate: 4, rms }, cuts: [] });
+    expect(r.clips.length).toBe(3);
+    for (const c of r.clips) expect(c.segments[0].end - c.segments[0].start).toBeGreaterThanOrEqual(45);
   });
 });

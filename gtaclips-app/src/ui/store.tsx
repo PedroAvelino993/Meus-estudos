@@ -6,9 +6,10 @@ import { buildMoments, buildTimeline, deadSeconds } from "../core/moments";
 import { generate } from "../core/stories";
 import { uid } from "../core/format";
 import { db, sessionSource, setSessionSource, sourceFor } from "../media/db";
-import { analyzeVideo } from "../media/analyze";
+import { analyzeVideo, envelopeForFile } from "../media/analyze";
 import { cleanupChunks, exportClip } from "../media/export";
 import { freeDecoders } from "../media/frames";
+import { hasAudioTrack } from "../media/nativeaudio";
 import { prepareRecorder, recordClip, recorderSupported, type RecorderKit } from "../media/record";
 import { isWebKitEngine } from "../media/aacfix";
 import { generateCaptions } from "../media/speech";
@@ -322,11 +323,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (project: Project, gs: GenerateSettings) => {
       if (!project.analysis) return project;
       const s = settingsRef.current;
-      const usable = Math.min(project.source.duration, project.analysis.readableUntil ?? Infinity);
-      const tl = buildTimeline(project.analysis.samples, project.analysis.audio, usable);
+      // Projeto antigo sem o áudio lido (iPhone): lê agora pelo decodificador nativo, para achar as pausas
+      let analysis = project.analysis;
+      const extraNotes: string[] = [];
+      if (!analysis.audio) {
+        const file = await sourceFor(project.id);
+        if (file) {
+          try {
+            const audio = await envelopeForFile(file, project.source.duration);
+            if (audio) analysis = { ...analysis, audio };
+          } catch (e) {
+            logError("áudio ao gerar de novo", e);
+          }
+        }
+        if (!analysis.audio) extraNotes.push(file ? "O áudio deste vídeo não pôde ser lido; as divisões não acham as pausas da fala." : "Para as partes terminarem nas pausas da fala, abra o projeto com o vídeo original selecionado e gere de novo (o áudio ainda não foi lido neste projeto).");
+      }
+      const usable = Math.min(project.source.duration, analysis.readableUntil ?? Infinity);
+      const tl = buildTimeline(analysis.samples, analysis.audio, usable);
       const moments = buildMoments(tl, s.useLearned ? s.learned : {});
-      const gen = generate(moments, tl.intensity, gs, usable, { audio: project.analysis.audio, cuts: tl.rows.map((r) => r.cut) });
-      const p: Project = { ...project, settings: gs, analysis: { ...project.analysis, moments, deadSeconds: deadSeconds(moments) }, clips: gen.clips, notes: gen.notes };
+      const gen = generate(moments, tl.intensity, gs, usable, { audio: analysis.audio, cuts: tl.rows.map((r) => r.cut) });
+      const p: Project = { ...project, settings: gs, analysis: { ...analysis, moments, deadSeconds: deadSeconds(moments) }, clips: gen.clips, notes: [...extraNotes, ...gen.notes] };
       await saveProject(p);
       return p;
     },
@@ -356,7 +372,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (!clip) continue;
             // Legendas automáticas: cria antes de exportar, se o clipe ainda não tiver
             const st = settingsRef.current;
-            if (!light && st.autoCaptions && clip.captionsOn && !clip.captions.length && project.source.audioCodec) {
+            if (!light && st.autoCaptions && clip.captionsOn && !clip.captions.length && (project.source.audioCodec || (await hasAudioTrack(file)))) {
               markBusy(id, { kind: "legendas", projectId: project.id, label: clip.title, at: Date.now(), detail: { model: st.whisperModel, auto: true } });
               try {
                 const res = await generateCaptions(file, clip.segments, { model: st.whisperModel, spoken: st.spoken, target: clip.captionLang, onProgress: (p) => updateJob(id, { value: i / clipIds.length, detail: `${clipIds.length > 1 ? `Clipe ${i + 1} de ${clipIds.length}: ` : ""}Criando as legendas — ${p.detail}` }) });

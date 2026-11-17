@@ -357,7 +357,7 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
               <button className="btn sm primary" onClick={() => go("editor", { projectId: p.id, clipId: c.id })}>
                 <Scissors size={14} /> Editar e assistir
               </button>
-              <button className="btn sm" disabled={!hasSource || !!capJob || !p.source.audioCodec} onClick={() => startCaptions(p, c.id, { target: c.captionLang })}>
+              <button className="btn sm" disabled={!hasSource || !!capJob} onClick={() => startCaptions(p, c.id, { target: c.captionLang })}>
                 <Captions size={14} /> {c.captions.length ? "Refazer legendas" : "Gerar legendas"}
               </button>
               {e && <ExportButtons rec={e} name={c.title} outdated={!!outdated} light={lightExport(c)} onMakeLight={() => startExport(p, [c.id], { light: true })} onRerecord={() => startExport(p, [c.id])} projectId={p.id} busy={exporting} />}

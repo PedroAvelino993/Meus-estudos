@@ -28,7 +28,8 @@ export async function probe(file: File): Promise<SourceInfo> {
       height: video.displayHeight,
       fps: Math.round(stats.averagePacketRate || 30),
       videoCodec: video.codec ?? "?",
-      audioCodec: audio && (await audio.canDecode()) ? audio.codec : null,
+      // Faixa de áudio presente (mesmo que o decodificador do navegador não leia: há o nativo)
+      audioCodec: audio ? (audio.codec ?? "áudio") : null,
       container: format.name,
       codecString,
       hdr,
