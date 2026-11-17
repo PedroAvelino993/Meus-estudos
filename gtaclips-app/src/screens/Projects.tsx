@@ -360,7 +360,7 @@ function ClipsList({ p, hasSource }: { p: Project; hasSource: boolean }) {
               <button className="btn sm" disabled={!hasSource || !!capJob || !p.source.audioCodec} onClick={() => startCaptions(p, c.id, { target: c.captionLang })}>
                 <Captions size={14} /> {c.captions.length ? "Refazer legendas" : "Gerar legendas"}
               </button>
-              {e && <ExportButtons rec={e} name={c.title} outdated={!!outdated} light={lightExport(c)} onMakeLight={() => startExport(p, [c.id], { light: true })} busy={exporting} />}
+              {e && <ExportButtons rec={e} name={c.title} outdated={!!outdated} light={lightExport(c)} onMakeLight={() => startExport(p, [c.id], { light: true })} onRerecord={() => startExport(p, [c.id])} projectId={p.id} busy={exporting} />}
               <button className="btn sm" disabled={!hasSource || exporting} onClick={() => startExport(p, [c.id])}>
                 <Play size={14} /> {e ? (outdated ? "Exportar de novo (clipe mudou)" : "Exportar de novo") : "Exportar MP4"}
               </button>
@@ -405,7 +405,7 @@ export function useShare() {
 }
 
 /** Salvar no celular (principal) e Compartilhar; no Android, acima de 50 MB oferece a versão leve. */
-export function ExportButtons({ rec, name, outdated, compact, light, onMakeLight, busy }: { rec: ExportRecord; name: string; outdated: boolean; compact?: boolean; light?: ExportRecord; onMakeLight?: () => void; busy?: boolean }) {
+export function ExportButtons({ rec, name, outdated, compact, light, onMakeLight, onRerecord, projectId, busy }: { rec: ExportRecord; name: string; outdated: boolean; compact?: boolean; light?: ExportRecord; onMakeLight?: () => void; onRerecord?: () => void; projectId?: string; busy?: boolean }) {
   const { toast } = useApp();
   const file = `${safeName(name)}.${extOf(rec)}`;
   const tooBig = rec.size > shareLimit();
@@ -425,7 +425,7 @@ export function ExportButtons({ rec, name, outdated, compact, light, onMakeLight
         {outdated ? " · antigo" : ""}
       </button>
       {dialog?.kind === "salvar" && <SaveDialog items={[{ name: file, load: () => db.getExportFile(rec.id) }]} onClose={() => setDialog(null)} onShare={tooBig ? undefined : shareMain} />}
-      {dialog?.kind === "share" && <ShareDialog item={{ name: dialog.name, load: () => db.getExportFile(dialog.id) }} purpose={dialog.purpose} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "share" && <ShareDialog item={{ name: dialog.name, load: () => db.getExportFile(dialog.id) }} purpose={dialog.purpose} recorded={rec.recorded} onRerecord={busy ? undefined : onRerecord} projectId={projectId} onClose={() => setDialog(null)} />}
       {light ? (
         <button className="btn sm" onClick={() => setDialog({ kind: "share", purpose: "compartilhar", id: light.id, name: `${safeName(name)}-leve.${extOf(light)}` })} title="Versão 720p menor que 50 MB">
           <Share2 size={14} /> Compartilhar (leve, {fmtBytes(light.size)})

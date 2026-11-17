@@ -5,10 +5,12 @@ import type { Category, Clip, ExportRecord, GenerateSettings, Project } from "..
 import { buildMoments, buildTimeline, deadSeconds } from "../core/moments";
 import { generate } from "../core/stories";
 import { uid } from "../core/format";
-import { db, setSessionSource, sourceFor } from "../media/db";
+import { db, sessionSource, setSessionSource, sourceFor } from "../media/db";
 import { analyzeVideo } from "../media/analyze";
 import { cleanupChunks, exportClip } from "../media/export";
 import { freeDecoders } from "../media/frames";
+import { prepareRecorder, recordClip, recorderSupported, type RecorderKit } from "../media/record";
+import { isWebKitEngine } from "../media/aacfix";
 import { generateCaptions } from "../media/speech";
 import { releaseAI } from "../media/ai";
 import { clearBusy, isIOS, logError, lowMemory, markBusy, takeCrashed, type BusyMark } from "../media/device";
@@ -88,7 +90,7 @@ interface Ctx {
   dismissJob: (id: string) => void;
   startAnalysis: (project: Project, file: Blob) => string;
   regenerate: (project: Project, settings: GenerateSettings) => Promise<Project>;
-  startExport: (project: Project, clipIds: string[], opts?: { light?: boolean }) => string;
+  startExport: (project: Project, clipIds: string[], opts?: { light?: boolean; kit?: RecorderKit }) => string;
   startCaptions: (project: Project, clipId: string, opts: { target: string }) => string;
   toast: (text: string, bad?: boolean) => void;
   toasts: { id: number; text: string; bad?: boolean }[];
@@ -317,8 +319,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const startExport = useCallback(
-    (project: Project, clipIds: string[], eopts: { light?: boolean } = {}) => {
+    (project: Project, clipIds: string[], eopts: { light?: boolean; kit?: RecorderKit } = {}) => {
       const light = !!eopts.light;
+      // iPhone/Safari: grava o clipe com o gravador nativo do aparelho (o arquivo sempre abre nele).
+      // O vídeo e o áudio precisam ser «destravados» agora, ainda dentro do toque no botão.
+      const kit = eopts.kit ?? (!light && isWebKitEngine() && recorderSupported() ? prepareRecorder(sessionSource(project.id)) : undefined);
       const [id, ctrl] = newJob({ kind: "exportacao", projectId: project.id, label: light ? `Versão leve de «${project.clips.find((c) => c.id === clipIds[0])?.title}»` : clipIds.length > 1 ? `Exportando ${clipIds.length} clipes` : `Exportando «${project.clips.find((c) => c.id === clipIds[0])?.title}»` });
       (async () => {
         const release = await keepAwake();
@@ -336,13 +341,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (!clip) continue;
             const short = settingsRef.current.exportQuality;
             markBusy(id, { kind: "exportacao", projectId: project.id, label: clip.title, at: Date.now(), detail: { short, format: clip.format, fps: clip.fps, seconds: clip.segments.reduce((a, s) => a + s.end - s.start, 0), res: `${project.source.width}x${project.source.height}`, codec: project.source.videoCodec } });
-            const { blob, record, warnings } = await exportClip(file, clip, fresh.analysis, project.id, project.source.fps, {
-              short,
-              light,
-              signal: ctrl.signal,
-              source: project.source,
-              onProgress: (p) => updateJob(id, { value: (i + p.value) / clipIds.length, detail: `${clipIds.length > 1 ? `Clipe ${i + 1} de ${clipIds.length}: ` : ""}${p.detail}` }),
-            });
+            const onProgress = (p: { value: number; detail: string }) => updateJob(id, { value: (i + p.value) / clipIds.length, detail: `${clipIds.length > 1 ? `Clipe ${i + 1} de ${clipIds.length}: ` : ""}${p.detail}` });
+            const { blob, record, warnings } = kit
+              ? await recordClip(kit, file, clip, fresh.analysis, project.id, { short, signal: ctrl.signal, onProgress })
+              : await exportClip(file, clip, fresh.analysis, project.id, project.source.fps, {
+                  short,
+                  light,
+                  signal: ctrl.signal,
+                  source: project.source,
+                  onProgress,
+                });
             try {
               await db.putExport(record, blob);
               await cleanupChunks();
@@ -362,6 +370,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } finally {
           clearBusy(id);
           release();
+          kit?.dispose();
         }
       })();
       return id;

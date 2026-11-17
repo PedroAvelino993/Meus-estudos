@@ -7,12 +7,14 @@ import { actionPath, insertSegment, moveSegment, outToSource, removeSegment, seg
 import { CAPTION_STYLES, FONTS, LANGUAGES, captionText, defaultStyle, languageName, toSrt } from "../core/captions";
 import { category } from "../core/categories";
 import { fmtDur, fmtTime, safeName, uid } from "../core/format";
-import { setSessionSource, sourceFor } from "../media/db";
+import { sessionSource, setSessionSource, sourceFor } from "../media/db";
 import { lowMemory } from "../media/device";
 import { capabilities, type Capabilities } from "../media/probe";
 import { drawFrame, ensureFonts, outputSize, type FrameState } from "../media/compose";
 import { effectiveSegments } from "../media/export";
 import { downloadBlob } from "../media/files";
+import { isWebKitEngine } from "../media/aacfix";
+import { prepareRecorder, recorderSupported } from "../media/record";
 import { claudeAvailable, claudeFixAndTranslate } from "../media/claude";
 import { translateCaptions } from "../media/speech";
 import { updateClip, useApp } from "../ui/store";
@@ -73,11 +75,13 @@ function ClipEditor({ project, clip: initial }: { project: Project; clip: Clip }
   const relink = useRef<HTMLInputElement>(null);
   /** Salva a edição na hora (sem esperar o atraso do salvamento automático) e exporta. */
   const exportNow = async () => {
+    // iPhone: prepara a gravação ainda dentro do toque (antes de esperar o salvamento)
+    const kit = isWebKitEngine() && recorderSupported() ? prepareRecorder(sessionSource(project.id)) : undefined;
     window.clearTimeout(saveTimer.current);
     const cur = projects.find((p) => p.id === project.id) ?? project;
     const updated = updateClip(cur, clip);
     await saveProject(updated);
-    startExport(updated, [clip.id]);
+    startExport(updated, [clip.id], { kit });
   };
   const capJob = jobs.find((j) => j.clipId === clip.id && j.kind === "legendas" && j.status === "rodando");
   const exporting = jobs.find((j) => j.projectId === project.id && j.kind === "exportacao" && j.status === "rodando");

@@ -99,6 +99,11 @@ export function setSessionSource(projectId: string, file: Blob) {
   session.set(projectId, file);
 }
 
+/** Vídeo original já aberto nesta sessão (sem esperar nada: usado no toque do botão). */
+export function sessionSource(projectId: string): Blob | null {
+  return session.get(projectId) ?? null;
+}
+
 /** Vídeo original de um projeto: da sessão atual ou da cópia guardada no aparelho. */
 export async function sourceFor(projectId: string): Promise<Blob | null> {
   const s = session.get(projectId);

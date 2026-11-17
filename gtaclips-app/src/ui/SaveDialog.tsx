@@ -2,11 +2,11 @@
 // e explica onde o vídeo foi parar.
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, ExternalLink, Share2 } from "lucide-react";
+import { CheckCircle2, Download, ExternalLink, Share2 } from "lucide-react";
 import { Bar, Modal } from "./kit";
 import { downloadBlob, readWithProgress } from "../media/files";
+import { sessionSource, setSessionSource } from "../media/db";
 import { inAppBrowser, isIOS, logError, openInChromeUrl } from "../media/device";
-import { checkPlayback } from "../media/compat";
 
 export interface SaveItem {
   name: string;
@@ -139,13 +139,16 @@ export function SaveDialog({ items, onClose, onShare }: { items: SaveItem[]; onC
 // (fica girando) ao entregar arquivos guardados no banco do navegador. Por isso: 1) o app prepara
 // o vídeo na memória mostrando a porcentagem; 2) o toque no botão abre o menu na hora.
 
-type SharePhase = { kind: "preparando"; value: number } | { kind: "pronto" } | { kind: "abrindo" } | { kind: "feito" } | { kind: "erro"; message: string } | { kind: "app"; name: string };
+type SharePhase = { kind: "preparando"; value: number } | { kind: "pronto" } | { kind: "abrindo"; slow: boolean } | { kind: "feito" } | { kind: "baixado" } | { kind: "erro"; message: string } | { kind: "app"; name: string };
 
-export function ShareDialog({ item, purpose, onClose }: { item: SaveItem; purpose: "fotos" | "compartilhar"; onClose: () => void }) {
+export function ShareDialog({ item, purpose, onClose, recorded, onRerecord, projectId }: { item: SaveItem; purpose: "fotos" | "compartilhar"; onClose: () => void; recorded?: boolean; onRerecord?: () => void; projectId?: string }) {
+  // Para gravar de novo é preciso o vídeo original aberto nesta sessão
+  const [hasSource, setHasSource] = useState(() => !projectId || !!sessionSource(projectId));
   const app = inAppBrowser();
   const [phase, setPhase] = useState<SharePhase>(app ? { kind: "app", name: app } : { kind: "preparando", value: 0 });
   const file = useRef<File | null>(null);
   const started = useRef(false);
+  const ios = isIOS();
 
   const prepare = async () => {
     try {
@@ -163,16 +166,8 @@ export function ShareDialog({ item, purpose, onClose }: { item: SaveItem; purpos
         got += value.length;
         setPhase({ kind: "preparando", value: Math.min(1, got / total) });
       }
-      // Arquivo na memória: o menu do sistema recebe na hora, sem ficar girando
+      // Arquivo na memória: o menu do sistema recebe na hora
       file.current = new File(parts as BlobPart[], item.name, { type: b.type || "video/mp4" });
-      // iPhone: confere se o próprio iPhone consegue abrir o vídeo (senão o menu trava girando)
-      if (isIOS() && (await checkPlayback(file.current)) === "ruim") {
-        throw new Error("O iPhone não consegue abrir este arquivo (ele foi exportado por uma versão antiga do app). Toque em «Exportar de novo» neste clipe: agora o app testa antes qual formato o seu iPhone abre.");
-      }
-      const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-      if (typeof nav.share !== "function" || (nav.canShare && !nav.canShare({ files: [file.current] }))) {
-        throw new Error("Este navegador não tem o menu de compartilhar arquivos. Abra o site no Safari (iPhone) ou no Chrome (Android).");
-      }
       setPhase({ kind: "pronto" });
     } catch (e) {
       logError("preparar compartilhamento", e);
@@ -190,34 +185,60 @@ export function ShareDialog({ item, purpose, onClose }: { item: SaveItem; purpos
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const canShare = () => {
+    const f = file.current;
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    return !!f && typeof nav.share === "function" && (!nav.canShare || nav.canShare({ files: [f] }));
+  };
+
   const open = () => {
     const f = file.current;
     if (!f) return;
+    if (!canShare()) {
+      setPhase({ kind: "erro", message: "Este navegador não tem o menu de compartilhar arquivos. Use «Baixar o arquivo»." });
+      return;
+    }
     if (shareBusy) {
-      setPhase({ kind: "erro", message: "O menu de compartilhar anterior ainda está aberto ou travou. Feche o app (ou recarregue a página) e tente de novo." });
+      setPhase({ kind: "erro", message: "O menu de compartilhar anterior travou. Use «Baixar o arquivo» ou recarregue a página." });
       return;
     }
     shareBusy = true;
-    setPhase({ kind: "abrindo" });
+    setPhase({ kind: "abrindo", slow: false });
+    // Se o menu não aparecer em alguns segundos, mostra as outras saídas
+    const slow = setTimeout(() => setPhase((p) => (p.kind === "abrindo" ? { kind: "abrindo", slow: true } : p)), 6000);
     // Chamado direto no toque (sem esperar nada antes), como o iPhone exige
     navigator
       .share({ files: [f] })
       .then(() => setPhase({ kind: "feito" }))
       .finally(() => {
+        clearTimeout(slow);
         shareBusy = false;
       })
       .catch((e) => {
         const n = e instanceof DOMException ? e.name : "";
         if (n === "AbortError") setPhase({ kind: "pronto" });
-        else if (n === "InvalidStateError") setPhase({ kind: "erro", message: "O menu de compartilhar anterior ainda está aberto ou travou. Feche o app (ou recarregue a página) e tente de novo." });
         else {
           logError("compartilhar", e);
-          setPhase({ kind: "erro", message: n === "NotAllowedError" ? "O aparelho recusou o arquivo (pode ser grande demais para este app). Tente «Salvar» e compartilhe pela galeria." : `Não foi possível compartilhar (${e instanceof Error ? e.message : e}).` });
+          setPhase({ kind: "erro", message: n === "InvalidStateError" ? "O menu de compartilhar anterior travou. Use «Baixar o arquivo» ou recarregue a página." : `O menu de compartilhar falhou (${e instanceof Error ? e.message : e}). Use «Baixar o arquivo».` });
         }
       });
   };
 
+  /** Plano B: baixar (no iPhone abre a tela do arquivo; de lá: compartilhar → «Salvar vídeo»). */
+  const download = () => {
+    const f = file.current;
+    if (!f) return;
+    downloadBlob(f, item.name);
+    setPhase({ kind: "baixado" });
+  };
+
   const fotos = purpose === "fotos";
+  const planB = (
+    <button className="btn block" onClick={download}>
+      <Download size={16} /> Baixar o arquivo (plano B)
+    </button>
+  );
+  const planBText = ios ? "Plano B: o iPhone abre a tela do arquivo. Toque no ícone de compartilhar (quadrado com seta, no canto de baixo) e escolha «Salvar vídeo»." : "Plano B: o vídeo vai para a pasta Download (aparece na Galeria, álbum «Download»).";
   const title = phase.kind === "app" ? "Abra no navegador para salvar" : fotos ? "Salvar no app Fotos" : "Compartilhar o vídeo";
   return (
     <Modal title={title} onClose={onClose}>
@@ -232,16 +253,63 @@ export function ShareDialog({ item, purpose, onClose }: { item: SaveItem; purpos
             <p className="tiny muted">{item.name}</p>
           </>
         )}
-        {(phase.kind === "pronto" || phase.kind === "abrindo") && (
+        {phase.kind === "pronto" && (
           <>
-            <div className="row" style={{ gap: 8 }}>
-              <CheckCircle2 size={20} color="#22c55e" />
-              <b>Vídeo pronto (100%).</b>
-            </div>
-            <button className="btn primary block lg" onClick={open} disabled={phase.kind === "abrindo"}>
+            {ios && !recorded && onRerecord && (
+              <div className="banner amber">
+                <span>
+                  Este arquivo foi feito pelo método antigo, que o iPhone pode não abrir. <b>Recomendado:</b> gravar a versão para iPhone (grava o clipe direto, como uma gravação de tela, mas sem a interface; leva o tempo do clipe).
+                </span>
+              </div>
+            )}
+            {ios && !recorded && onRerecord && hasSource && (
+              <button
+                className="btn primary block lg"
+                onClick={() => {
+                  onRerecord();
+                  onClose();
+                }}
+              >
+                Gravar versão para iPhone
+              </button>
+            )}
+            {ios && !recorded && onRerecord && !hasSource && projectId && (
+              <label className="btn primary block lg" style={{ textAlign: "center" }}>
+                1º passo: selecionar o vídeo original
+                <input
+                  type="file"
+                  accept="video/*"
+                  hidden
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    setSessionSource(projectId, f);
+                    setHasSource(true);
+                  }}
+                />
+              </label>
+            )}
+            <button className={`btn block lg ${ios && !recorded && onRerecord ? "" : "primary"}`} onClick={open}>
               <Share2 size={18} /> {fotos ? "Salvar no Fotos" : "Compartilhar agora"}
             </button>
-            <p className="muted">{fotos ? "No menu que abrir, toque em «Salvar vídeo». O vídeo vai para o app Fotos (galeria)." : "No menu que abrir, escolha WhatsApp, Telegram, Instagram ou «Salvar vídeo»."}</p>
+            <p className="muted">{fotos ? "No menu que abrir, toque em «Salvar vídeo». O vídeo vai para o app Fotos." : "No menu que abrir, escolha WhatsApp, Telegram, Instagram ou «Salvar vídeo»."}</p>
+            {planB}
+            <p className="tiny faint">{planBText}</p>
+          </>
+        )}
+        {phase.kind === "abrindo" && (
+          <>
+            <p>Abrindo o menu do aparelho…</p>
+            {phase.slow && (
+              <>
+                <div className="banner amber">O menu não abriu? Use o plano B abaixo (não depende do menu) ou recarregue a página.</div>
+                {planB}
+                <p className="tiny faint">{planBText}</p>
+                <button className="btn ghost" onClick={() => location.reload()}>
+                  Recarregar a página
+                </button>
+              </>
+            )}
           </>
         )}
         {phase.kind === "feito" && (
@@ -260,15 +328,31 @@ export function ShareDialog({ item, purpose, onClose }: { item: SaveItem; purpos
             </div>
           </>
         )}
+        {phase.kind === "baixado" && (
+          <>
+            <div className="row" style={{ gap: 8 }}>
+              <CheckCircle2 size={22} color="#22c55e" />
+              <b>Arquivo enviado.</b>
+            </div>
+            <p className="muted">{ios ? "Se o iPhone abriu a tela do arquivo: toque no ícone de compartilhar (quadrado com seta, embaixo) → «Salvar vídeo». Se ele perguntou se quer baixar, toque em «Baixar»; o arquivo fica no app Arquivos → Downloads, e de lá: compartilhar → «Salvar vídeo»." : "O vídeo está na pasta Download (Galeria → álbum «Download»)."}</p>
+            <button className="btn primary" onClick={onClose}>
+              Concluir
+            </button>
+          </>
+        )}
         {phase.kind === "erro" && (
           <>
             <div className="banner red">{phase.message}</div>
+            {file.current && planB}
             <div className="row wrap">
               {file.current && (
                 <button className="btn" onClick={() => setPhase({ kind: "pronto" })}>
-                  Tentar de novo
+                  Voltar
                 </button>
               )}
+              <button className="btn ghost" onClick={() => location.reload()}>
+                Recarregar a página
+              </button>
               <button className="btn" onClick={onClose}>
                 Fechar
               </button>

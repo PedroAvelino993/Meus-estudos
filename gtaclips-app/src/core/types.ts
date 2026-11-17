@@ -253,4 +253,6 @@ export interface ExportRecord {
   mime: string;
   /** Versão leve (720p, menos de 45 MB) feita para caber no compartilhamento do celular. */
   light?: boolean;
+  /** Gravado pelo gravador nativo do aparelho (iPhone): sempre abre no próprio aparelho. */
+  recorded?: boolean;
 }
