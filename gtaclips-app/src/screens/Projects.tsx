@@ -9,9 +9,9 @@ import { seg, totalDuration } from "../core/timeline";
 import { defaultStyle } from "../core/captions";
 import { fmtBytes, fmtDur, fmtTime, safeName, uid } from "../core/format";
 import { db, setSessionSource, sourceFor } from "../media/db";
-import { SHARE_MESSAGE, canShareFiles, downloadBlob, saveToGallery, shareFiles, shareLimit, zipFiles } from "../media/files";
+import { SHARE_MESSAGE, canShareFiles, downloadBlob, shareFiles, shareLimit, zipFiles } from "../media/files";
 import { isIOS, isMobile } from "../media/device";
-import { SaveDialog, type SaveItem } from "../ui/SaveDialog";
+import { SaveDialog, ShareDialog, type SaveItem } from "../ui/SaveDialog";
 import { useApp, updateClip } from "../ui/store";
 import { Bar, Card, Empty, Head, ScoreBadge, Seg, thumbAt, useThumbs } from "../ui/kit";
 import { Jobs, statusTag } from "./Dashboard";
@@ -399,51 +399,30 @@ export function useShare() {
   };
 }
 
-/** Salvar na galeria (principal) e Compartilhar; para arquivos acima de 50 MB oferece a versão leve. */
+/** Salvar no celular (principal) e Compartilhar; no Android, acima de 50 MB oferece a versão leve. */
 export function ExportButtons({ rec, name, outdated, compact, light, onMakeLight, busy }: { rec: ExportRecord; name: string; outdated: boolean; compact?: boolean; light?: ExportRecord; onMakeLight?: () => void; busy?: boolean }) {
   const { toast } = useApp();
-  const share = useShare();
-  const get = async (id: string) => {
-    const b = await db.getExportFile(id);
-    if (!b) toast("Arquivo não encontrado. Exporte o clipe de novo.", true);
-    return b;
-  };
   const file = `${safeName(name)}.mp4`;
   const tooBig = rec.size > shareLimit();
-  const [saving, setSaving] = useState(false);
-  const shareMain = async () => {
-    const b = await get(rec.id);
-    if (b) await share([{ blob: b, name: file }], name);
-  };
+  const ios = isIOS();
+  const [dialog, setDialog] = useState<null | { kind: "salvar" } | { kind: "share"; purpose: "fotos" | "compartilhar"; id: string; name: string }>(null);
+  const shareMain = () => setDialog({ kind: "share", purpose: "compartilhar", id: rec.id, name: file });
   const canLight = tooBig && !light && !!onMakeLight;
   return (
     <>
       <button
         className="btn sm primary"
-        onClick={async () => {
-          // iPhone: o menu do sistema tem «Salvar vídeo» (vai direto para o app Fotos)
-          if (isIOS()) {
-            const b = await get(rec.id);
-            if (b) await saveToGallery(b, file);
-            return;
-          }
-          setSaving(true);
-        }}
+        // iPhone: «Salvar vídeo» do menu do sistema manda direto para o app Fotos
+        onClick={() => setDialog(ios ? { kind: "share", purpose: "fotos", id: rec.id, name: file } : { kind: "salvar" })}
         title={outdated ? "O clipe mudou depois desta exportação" : ""}
       >
-        <Images size={14} /> {compact ? "Salvar" : `Salvar no celular (${fmtBytes(rec.size)})`}
+        <Images size={14} /> {compact ? "Salvar" : ios ? `Salvar no Fotos (${fmtBytes(rec.size)})` : `Salvar no celular (${fmtBytes(rec.size)})`}
         {outdated ? " · antigo" : ""}
       </button>
-      {saving && <SaveDialog items={[{ name: file, load: () => db.getExportFile(rec.id) }]} onClose={() => setSaving(false)} onShare={tooBig ? undefined : shareMain} />}
+      {dialog?.kind === "salvar" && <SaveDialog items={[{ name: file, load: () => db.getExportFile(rec.id) }]} onClose={() => setDialog(null)} onShare={tooBig ? undefined : shareMain} />}
+      {dialog?.kind === "share" && <ShareDialog item={{ name: dialog.name, load: () => db.getExportFile(dialog.id) }} purpose={dialog.purpose} onClose={() => setDialog(null)} />}
       {light ? (
-        <button
-          className="btn sm"
-          onClick={async () => {
-            const b = await get(light.id);
-            if (b) await share([{ blob: b, name: `${safeName(name)}-leve.mp4` }], name);
-          }}
-          title="Versão 720p menor que 50 MB"
-        >
+        <button className="btn sm" onClick={() => setDialog({ kind: "share", purpose: "compartilhar", id: light.id, name: `${safeName(name)}-leve.mp4` })} title="Versão 720p menor que 50 MB">
           <Share2 size={14} /> Compartilhar (leve, {fmtBytes(light.size)})
         </button>
       ) : canLight ? (
@@ -459,11 +438,7 @@ export function ExportButtons({ rec, name, outdated, compact, light, onMakeLight
           <Share2 size={14} /> Compartilhar (criar versão leve)
         </button>
       ) : (
-        <button
-          className="btn sm"
-          onClick={shareMain}
-          title={canShareFiles() ? "WhatsApp, Telegram, Drive…" : "Este navegador não tem menu de compartilhar: o vídeo será baixado"}
-        >
+        <button className="btn sm" onClick={shareMain} title={canShareFiles() ? "WhatsApp, Telegram, Instagram…" : "Este navegador não tem menu de compartilhar"}>
           <Share2 size={14} /> Compartilhar
         </button>
       )}
