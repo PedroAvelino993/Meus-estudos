@@ -19,22 +19,22 @@ export function GenerateForm({ value, onChange, sourceFps, sourceDuration }: { v
           value={value.mode}
           onChange={(mode) => set({ mode })}
           options={[
-            { id: "cena", label: "Cena contínua (recomendado)" },
+            { id: "cena", label: "Parte 1, 2, 3… sem cortes (recomendado)" },
             { id: "historias", label: "Melhores momentos" },
-            { id: "continua", label: "Parte 1, 2, 3…" },
+            { id: "continua", label: "Resumo em partes (com cortes)" },
           ]}
         />
         <p className="tiny muted" style={{ marginTop: 6 }}>
           {value.mode === "cena"
-            ? "Cada clipe é um trecho corrido da cena (sem cortes no meio), começando e terminando em pausas naturais da fala — nunca começa no meio de uma resposta. Os cortes ficam só entre um clipe e outro."
+            ? "A gravação vira Parte 1, 2, 3… em sequência: cada parte é um trecho corrido, sem nenhum corte no meio, e a próxima continua de onde a anterior parou. A divisão entre as partes cai sempre numa pausa da fala (nunca com alguém falando). Menus e carregamentos longos ficam de fora."
             : value.mode === "historias"
               ? "Junta os melhores acontecimentos de uma mesma história (começo, desenvolvimento e conclusão), cortando o tempo morto no meio."
-              : "A gravação vira episódios em sequência. Cada parte termina num momento de tensão real, para o público querer ver a próxima."}
+              : "Episódios em sequência com o tempo morto cortado dentro de cada parte; cada parte termina num momento de tensão."}
         </p>
       </div>
       <div className="grid g2">
         <div>
-          <h4 style={{ marginBottom: 8 }}>{value.mode === "continua" ? "Quantidade de partes" : "Quantidade de clipes"}</h4>
+          <h4 style={{ marginBottom: 8 }}>{value.mode === "historias" ? "Quantidade de clipes" : "Quantidade de partes"}</h4>
           <div className="chips">
             {COUNTS.map((c) => (
               <button key={c} className={`chip ${value.count === c ? "on" : ""}`} onClick={() => set({ count: c })}>

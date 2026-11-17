@@ -224,39 +224,48 @@ describe("medidas de imagem", () => {
   });
 });
 
-describe("modo cena contínua", () => {
-  const settings: GenerateSettings = { mode: "cena", count: 2, duration: 60, format: "1:1", reframe: "desfocado", fps: 30, captions: true, captionLang: "orig", captionStyle: "basica", removeSilence: false, context: 3 };
+describe("modo partes sem cortes", () => {
+  const settings: GenerateSettings = { mode: "cena", count: 5, duration: 60, format: "1:1", reframe: "desfocado", fps: 30, captions: true, captionLang: "orig", captionStyle: "basica", removeSilence: false, context: 3 };
   const mk = (id: string, start: number, end: number, score: number, dead = false) => ({ id, start, end, category: dead ? "carregamento" : "perseguicao", score, factors: {} as never, description: "", thumbT: start, dead, peakT: (start + end) / 2 }) as never;
-  const moments = [mk("a", 0, 30, 5, true), mk("b", 30, 160, 80), mk("c", 160, 200, 5, true), mk("d", 200, 300, 60)];
+  const moments = [mk("a", 0, 30, 5, true), mk("b", 30, 160, 80), mk("c", 160, 200, 5, true), mk("d", 200, 400, 60)];
   // Fala com pausas (silêncio) em instantes conhecidos
-  const gaps = [[37, 38.5], [96, 97.5], [150, 151.2], [208, 209.5], [266, 267.5]];
-  const rms = Array.from({ length: 300 * 4 }, (_, i) => (gaps.some(([a, b]) => i / 4 >= a && i / 4 < b) ? 0.02 : 0.5 + 0.3 * Math.sin(i)));
+  const gaps = [[37, 38.5], [96, 97.5], [150, 151.2], [208, 209.5], [266, 267.5], [330, 331.5], [385, 386]];
+  const inGap = (t: number) => gaps.some(([a, b]) => t >= a - 0.01 && t <= b + 0.01);
+  const rms = Array.from({ length: 400 * 4 }, (_, i) => (gaps.some(([a, b]) => i / 4 >= a && i / 4 < b) ? 0.02 : 0.55 + 0.08 * Math.sin(i)));
   const audio = { rate: 4, rms };
-  const intensity = Array.from({ length: 300 }, (_, t) => (t < 30 || (t >= 160 && t < 200) ? 0.05 : 0.6));
+  const intensity = Array.from({ length: 400 }, (_, t) => (t < 30 || (t >= 160 && t < 200) ? 0.05 : 0.6));
+  const r = generate(moments, intensity, settings, 400, { audio, cuts: [] });
 
-  it("faz cada clipe com um único trecho corrido, sem repetir e fora do tempo morto", () => {
-    const r = generate(moments, intensity, settings, 300, { audio, cuts: [] });
-    expect(r.clips.length).toBe(2);
-    for (const c of r.clips) {
+  it("gera Parte 1, 2, 3… em ordem, cada uma com um único trecho corrido", () => {
+    expect(r.clips.length).toBeGreaterThanOrEqual(4);
+    r.clips.forEach((c, i) => {
+      expect(c.part).toBe(i + 1);
+      expect(c.title.startsWith(`Parte ${i + 1}`)).toBe(true);
       expect(c.segments.length).toBe(1);
-      const s = c.segments[0];
-      expect(s.end - s.start).toBeGreaterThanOrEqual(45);
-      expect(s.end - s.start).toBeLessThanOrEqual(78);
-      expect(s.start).toBeGreaterThanOrEqual(30);
-      expect(c.format).toBe("1:1");
-      expect(c.removeSilence).toBe(false);
-    }
-    const [a, b] = r.clips.map((c) => c.segments[0]);
-    expect(a.end).toBeLessThanOrEqual(b.start);
+      expect(c.segments[0].end - c.segments[0].start).toBeGreaterThanOrEqual(20);
+      expect(c.segments[0].end - c.segments[0].start).toBeLessThanOrEqual(80);
+    });
   });
 
-  it("começa logo antes da fala recomeçar e termina numa pausa", () => {
-    const r = generate(moments, intensity, settings, 300, { audio, cuts: [] });
+  it("uma parte continua de onde a outra parou (sem pular cena) e nunca corta alguém falando", () => {
+    for (let i = 1; i < r.clips.length; i++) {
+      const prev = r.clips[i - 1].segments[0];
+      const cur = r.clips[i].segments[0];
+      expect(cur.start).toBeGreaterThanOrEqual(prev.end - 0.01);
+      // Ou continua na mesma pausa, ou pulou um tempo morto (carregamento)
+      const sameScene = cur.start - prev.end < 2;
+      if (sameScene) {
+        expect(inGap(prev.end)).toBe(true);
+        expect(inGap(cur.start)).toBe(true);
+      } else expect(prev.end).toBeCloseTo(160, 0);
+    }
+  });
+
+  it("fica fora dos menus/carregamentos", () => {
     for (const c of r.clips) {
       const s = c.segments[0];
-      // Início: dentro de uma pausa (até 0,3 s antes do fim dela)
-      expect(gaps.some(([g0, g1]) => s.start >= g0 - 0.01 && s.start <= g1)).toBe(true);
-      expect(gaps.some(([g0, g1]) => s.end >= g0 && s.end <= g1 + 0.01)).toBe(true);
+      expect(s.start).toBeGreaterThanOrEqual(30);
+      expect(s.start >= 200 || s.end <= 160).toBe(true);
     }
   });
 });

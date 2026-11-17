@@ -388,7 +388,9 @@ export function findPauses(audio: AudioEnvelope | null | undefined, cuts: boolea
     const p30 = sorted[Math.floor(sorted.length * 0.3)];
     const p90 = sorted[Math.floor(sorted.length * 0.9)] || 1;
     // Baixo = perto do fundo do áudio (o jogo nunca fica mudo: o limite é relativo)
-    const thr = p30 + (p90 - p30) * 0.18;
+    const med = sorted[Math.floor(sorted.length * 0.5)];
+    // Precisa ser bem mais baixo que o normal (som contínuo sem pausa real não vira «pausa»)
+    const thr = Math.min(p30 + (p90 - p30) * 0.18, med * 0.6);
     let start = -1;
     for (let i = 0; i <= audio.rms.length; i++) {
       const quiet = i < audio.rms.length && audio.rms[i] <= thr;
@@ -408,6 +410,26 @@ export function findPauses(audio: AudioEnvelope | null | undefined, cuts: boolea
   // Sem áudio útil: os cortes de cena servem de fronteira
   if (!out.length) cuts.forEach((c, t) => c && out.push({ a: t, b: t + 0.5, w: 0.6 }));
   return out;
+}
+
+/** Ponto mais silencioso (média de ~0,75 s) entre dois instantes: o lugar menos provável de cortar uma fala. */
+export function quietestPoint(audio: AudioEnvelope | null | undefined, from: number, to: number): number | null {
+  if (!audio || !audio.rms.length || to - from < 1) return null;
+  const w = Math.max(1, Math.round(audio.rate * 0.75));
+  const i0 = Math.max(0, Math.floor(from * audio.rate));
+  const i1 = Math.min(audio.rms.length - w, Math.floor(to * audio.rate) - w);
+  let best = -1;
+  let bestV = Infinity;
+  let sum = 0;
+  for (let k = i0; k < i0 + w && k < audio.rms.length; k++) sum += audio.rms[k];
+  for (let i = i0; i <= i1; i++) {
+    if (sum < bestV) {
+      bestV = sum;
+      best = i;
+    }
+    sum += (audio.rms[i + w] ?? 0) - audio.rms[i];
+  }
+  return best < 0 ? null : (best + w / 2) / audio.rate;
 }
 
 /**
@@ -436,68 +458,117 @@ export function snapWindow(s: number, e: number, pauses: Pause[], duration: numb
 }
 
 /**
- * Modo cena contínua: cada clipe é UM trecho corrido da gravação (sem cortes no meio), escolhido
- * onde há mais acontecimentos, começando e terminando em pausas naturais. Os cortes ficam só
- * entre um clipe e outro.
+ * Modo partes sem cortes (padrão): a gravação vira Parte 1, 2, 3… em sequência — cada parte é UM
+ * trecho corrido (nenhum corte dentro dela) e a divisão entre as partes cai sempre numa pausa da
+ * fala, nunca com alguém falando. Telas de menu/carregamento longas ficam de fora (entre as partes).
+ * Se o vídeo tem mais material que o pedido, as partes saem do trecho seguido com mais ação.
  */
 export function generateScenes(moments: Moment[], intensity: number[], settings: GenerateSettings, duration: number, signals: SceneSignals = {}): GenerateResult {
   const notes: string[] = [];
+  if (!moments.length) return { clips: [], notes: ["A análise não encontrou momentos neste vídeo."] };
   const n = Math.max(1, Math.ceil(duration));
   const L = Math.min(settings.duration, duration);
-  const minL = Math.max(5, L * 0.75);
+  const minL = Math.max(5, L * 0.7);
   const maxL = L * 1.3;
-  // Interesse de cada segundo: intensidade + nota dos momentos; tempo morto vale negativo
+  const pauses = findPauses(signals.audio, signals.cuts);
+
+  // Trechos aproveitáveis: tudo menos tempo morto longo (≥ 6 s de menu, carregamento, espera…)
+  const deadRuns: [number, number][] = [];
+  for (const m of [...moments].filter((x) => x.dead).sort((x, y) => x.start - y.start)) {
+    const last = deadRuns[deadRuns.length - 1];
+    if (last && m.start <= last[1] + 0.5) last[1] = Math.max(last[1], m.end);
+    else deadRuns.push([m.start, m.end]);
+  }
+  const longDead = deadRuns.filter(([a0, b0]) => b0 - a0 >= 6);
+  const spans: [number, number][] = [];
+  let cur = 0;
+  for (const [a0, b0] of longDead) {
+    if (a0 - cur >= 5) spans.push([cur, a0]);
+    cur = Math.max(cur, b0);
+  }
+  if (duration - cur >= 5) spans.push([cur, duration]);
+  if (!spans.length) return { clips: [], notes: ["O vídeo é quase todo tempo morto (menus, carregamentos); não há trecho para virar clipe."] };
+
+  // Interesse por segundo (para escolher onde começar quando sobra material)
   const val = new Float32Array(n);
   for (let i = 0; i < n; i++) val[i] = intensity[i] ?? 0;
-  for (const m of moments) {
-    for (let t = Math.max(0, Math.floor(m.start)); t < Math.min(n, Math.ceil(m.end)); t++) {
-      if (m.dead) val[t] = -0.6;
-      else val[t] += (m.score / 100) * 0.8;
+  for (const m of moments) for (let t = Math.max(0, Math.floor(m.start)); t < Math.min(n, Math.ceil(m.end)); t++) val[t] = m.dead ? 0 : val[t] + (m.score / 100) * 0.8;
+  const usable: number[] = [];
+  for (const [a0, b0] of spans) for (let t = Math.ceil(a0); t < Math.floor(b0); t++) usable.push(t);
+  const need = Math.round(settings.count * L);
+  let startIdx = 0;
+  if (usable.length > need * 1.05) {
+    let sum = 0;
+    for (let i = 0; i < need; i++) sum += val[usable[i]];
+    let best = sum;
+    for (let i = 1; i + need <= usable.length; i++) {
+      sum += val[usable[i + need - 1]] - val[usable[i - 1]];
+      if (sum > best) {
+        best = sum;
+        startIdx = i;
+      }
     }
   }
-  const pre = new Float64Array(n + 1);
-  for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + val[i];
-  const win = Math.max(1, Math.round(L));
-  const cand: { s: number; v: number }[] = [];
-  for (let s0 = 0; s0 + win <= n || (s0 === 0 && win > n); s0++) {
-    const e0 = Math.min(n, s0 + win);
-    cand.push({ s: s0, v: (pre[e0] - pre[s0]) / win });
+  let si = spans.findIndex(([a0, b0]) => usable[startIdx] >= a0 && usable[startIdx] < b0);
+  if (si < 0) si = 0;
+  // Começo da Parte 1: logo antes de uma fala começar (pausa perto do ponto escolhido)
+  let cursor = startIdx === 0 ? spans[si][0] : snapWindow(usable[startIdx], usable[startIdx] + L, pauses, duration, minL, maxL, spans[si][0], spans[si][1]).start;
+
+  const parts: { start: number; end: number }[] = [];
+  while (parts.length < settings.count && si < spans.length) {
+    const limit = spans[si][1];
+    if (limit - cursor < 5) {
+      si++;
+      if (si < spans.length) cursor = spans[si][0];
+      continue;
+    }
+    let end: number;
+    let next: number;
+    const rem = limit - cursor;
+    // Se depois de cortar sobraria uma parte curta demais, divide o resto em duas partes parecidas
+    const target = rem < L + minL ? rem / 2 : L;
+    const lo = Math.min(minL, target * 0.8);
+    if (rem <= maxL || target < 5) {
+      // O trecho acaba antes de um tempo morto: a parte vai até ele (sem cortar no meio)
+      end = limit;
+      next = limit;
+    } else {
+      // Divide numa pausa perto da duração pedida (melhor pausa = mais longa / com corte de cena)
+      let best: { end: number; next: number; score: number } | null = null;
+      for (const p of pauses) {
+        const e0 = Math.min(p.b, p.a + 0.4);
+        const len = e0 - cursor;
+        if (len < lo || len > maxL || e0 > limit - 5) continue;
+        const sc = p.w - (Math.abs(len - target) / L) * 0.9;
+        if (!best || sc > best.score) best = { end: e0, next: Math.max(e0, p.b - 0.3), score: sc };
+      }
+      // Sem pausa clara (música/barulho contínuo): corta no ponto mais silencioso da faixa permitida
+      const q = best ? null : quietestPoint(signals.audio, cursor + Math.max(lo, target * 0.85), Math.min(limit - 5, cursor + Math.min(maxL, target * 1.15)));
+      end = best ? best.end : q ?? Math.min(limit, cursor + target);
+      next = best ? best.next : end;
+    }
+    parts.push({ start: Math.round(cursor * 100) / 100, end: Math.round(end * 100) / 100 });
+    cursor = next;
+    if (limit - cursor < 5) {
+      si++;
+      if (si < spans.length) cursor = spans[si][0];
+    }
   }
-  cand.sort((a, b) => b.v - a.v);
-  const pauses = findPauses(signals.audio, signals.cuts);
-  const chosen: { start: number; end: number; v: number }[] = [];
-  for (const c of cand) {
-    if (chosen.length >= settings.count) break;
-    if (c.v <= 0.05) break;
-    const e = Math.min(duration, c.s + win);
-    // Sem repetir trecho: precisa de folga em relação aos clipes já escolhidos
-    if (chosen.some((k) => c.s < k.end + 3 && e > k.start - 3)) continue;
-    // Limites: clipes já escolhidos e tempo morto (o clipe nunca começa/termina num menu ou carregamento)
-    const deadBefore = moments.filter((m) => m.dead && m.end <= c.s + 1).reduce((x, m) => Math.max(x, m.end), 0);
-    const deadAfter = moments.filter((m) => m.dead && m.start >= e - 1).reduce((x, m) => Math.min(x, m.start), duration);
-    const prev = Math.max(deadBefore, chosen.filter((k) => k.end <= c.s).reduce((m, k) => Math.max(m, k.end), 0));
-    const next = Math.min(deadAfter, chosen.filter((k) => k.start >= e).reduce((m, k) => Math.min(m, k.start), duration));
-    const w = snapWindow(c.s, e, pauses, duration, minL, maxL, prev, next);
-    if (w.end - w.start < Math.min(minL, duration * 0.9)) continue;
-    if (chosen.some((k) => w.start < k.end && w.end > k.start)) continue;
-    chosen.push({ ...w, v: c.v });
-  }
-  if (chosen.length < settings.count) notes.push(`O vídeo tem material para ${chosen.length} cena(s) de ~${Math.round(L)}s sem repetir trechos nem usar tempo morto; foram criados ${chosen.length} clipe(s) em vez de ${settings.count}.`);
-  if (!moments.length) return { clips: [], notes: ["A análise não encontrou momentos neste vídeo."] };
-  const clips = chosen
-    .sort((a, b) => a.start - b.start)
-    .map((w) => {
-      const inside = moments.filter((m) => !m.dead && m.end > w.start && m.start < w.end);
-      const climax = inside.length ? inside.reduce((a, b) => (b.score > a.score ? b : a)) : moments.find((m) => m.end > w.start && m.start < w.end) ?? moments[0];
-      const thread: Thread = { moments: inside.length ? inside : [climax], start: w.start, end: w.end, score: climax?.score ?? 0, climax };
-      const segments = [seg(w.start, w.end)];
-      const score = inside.length ? Math.round(climax.score * 0.6 + (inside.reduce((a, m) => a + m.score, 0) / inside.length) * 0.4) : Math.round(climax?.score ?? 0);
-      const beats = [
-        { t: w.start, label: `Começo: ${category(thread.moments[0].category).name.toLowerCase()}` },
-        ...(climax && climax.peakT > w.start + 3 && climax.peakT < w.end - 3 ? [{ t: climax.peakT, label: `Clímax: ${category(climax.category).name.toLowerCase()}` }] : []),
-        { t: Math.max(w.start, w.end - 1), label: "Desfecho" },
-      ];
-      return { ...baseClip(settings, { title: storyTitle(thread), story: `${storySummary(thread)} Trecho corrido, sem cortes no meio.`, beats, category: climax.category, score, segments }), removeSilence: false };
-    });
+  if (parts.length < settings.count) notes.push(`O vídeo tem material para ${parts.length} parte(s) de ~${Math.round(L)}s; foram criadas ${parts.length} em vez de ${settings.count}.`);
+  const clips = parts.map((w, k) => {
+    const inside = moments.filter((m) => !m.dead && m.end > w.start && m.start < w.end);
+    const climax = inside.length ? inside.reduce((a0, b0) => (b0.score > a0.score ? b0 : a0)) : moments.find((m) => m.end > w.start && m.start < w.end) ?? moments[0];
+    const thread: Thread = { moments: inside.length ? inside : [climax], start: w.start, end: w.end, score: climax.score, climax };
+    const score = inside.length ? Math.round(climax.score * 0.6 + (inside.reduce((a0, m) => a0 + m.score, 0) / inside.length) * 0.4) : Math.round(climax.score);
+    const beats = [
+      { t: w.start, label: `Começo: ${category(thread.moments[0].category).name.toLowerCase()}` },
+      ...(climax.peakT > w.start + 3 && climax.peakT < w.end - 3 ? [{ t: climax.peakT, label: `Clímax: ${category(climax.category).name.toLowerCase()}` }] : []),
+      { t: Math.max(w.start, w.end - 1), label: k < parts.length - 1 ? "Continua na próxima parte" : "Fim" },
+    ];
+    return {
+      ...baseClip(settings, { title: `Parte ${k + 1} — ${storyTitle(thread)}`, story: `${storySummary(thread)} Trecho corrido, sem cortes no meio${k < parts.length - 1 ? "; a Parte " + (k + 2) + " continua daqui" : ""}.`, beats, category: climax.category, score, segments: [seg(w.start, w.end)], part: k + 1 }),
+      removeSilence: false,
+    };
+  });
   return { clips, notes };
 }
