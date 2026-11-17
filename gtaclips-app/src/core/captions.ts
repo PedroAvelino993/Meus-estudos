@@ -5,6 +5,7 @@ import { sourceToOut } from "./timeline";
 import { uid } from "./format";
 
 export const CAPTION_STYLES: { id: CaptionStyleId; name: string; description: string }[] = [
+  { id: "basica", name: "Básica (recomendada)", description: "Embaixo, branca ou preta conforme o fundo, as palavras vão aparecendo enquanto são faladas." },
   { id: "tradicional", name: "Tradicional", description: "Texto branco com contorno, frase inteira." },
   { id: "dinamica", name: "Dinâmica", description: "Frases curtas que entram com um pequeno salto." },
   { id: "destaque", name: "Palavra destacada", description: "A palavra falada no momento fica colorida." },
@@ -24,6 +25,9 @@ export function defaultStyle(id: CaptionStyleId, format: AspectFormat): CaptionS
       return { ...base, font: "Anton", animation: "palavra", uppercase: true, size: base.size * 1.2, highlight: "#facc15" };
     case "viral":
       return { ...base, font: "Anton", animation: "pop", uppercase: true, size: base.size * 1.55, highlight: "#ef4444", position: vertical ? 0.6 : 0.8 };
+    case "basica":
+      // Cor automática (branco/preto conforme o fundo) e texto aparecendo como se fosse digitado
+      return { ...base, font: "Inter", color: "auto", size: vertical ? 3.4 : 4.6, position: vertical ? 0.84 : 0.9, animation: "digitar", outline: true };
     case "minimalista":
       return { ...base, font: "Inter", size: base.size * 0.8, outline: false, background: true, position: vertical ? 0.84 : 0.9 };
     default:

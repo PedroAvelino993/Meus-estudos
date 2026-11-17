@@ -524,8 +524,9 @@ function MomentsList({ p, onAddClip }: { p: Project; onAddClip: (m: Moment) => v
 }
 
 function Regenerate({ p }: { p: Project }) {
-  const { regenerate, toast } = useApp();
-  const [gs, setGs] = useState(p.settings);
+  const { regenerate, toast, settings } = useApp();
+  // Projetos feitos antes do modo cena contínua começam com os padrões novos (quadrado, cena corrida, legenda básica)
+  const [gs, setGs] = useState(p.settings.mode === "cena" ? p.settings : { ...settings.defaults, count: p.settings.count, duration: p.settings.duration });
   const [busy, setBusy] = useState(false);
   return (
     <Card title="Gerar os clipes de novo" icon={<RefreshCw size={16} />}>

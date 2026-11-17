@@ -19,12 +19,17 @@ export function GenerateForm({ value, onChange, sourceFps, sourceDuration }: { v
           value={value.mode}
           onChange={(mode) => set({ mode })}
           options={[
-            { id: "historias", label: "Histórias independentes" },
-            { id: "continua", label: "Modo história contínua (Parte 1, 2, 3…)" },
+            { id: "cena", label: "Cena contínua (recomendado)" },
+            { id: "historias", label: "Melhores momentos" },
+            { id: "continua", label: "Parte 1, 2, 3…" },
           ]}
         />
         <p className="tiny muted" style={{ marginTop: 6 }}>
-          {value.mode === "historias" ? "Cada clipe conta uma história diferente (começo, desenvolvimento e conclusão), sem repetir trechos." : "A gravação vira episódios em sequência. Cada parte termina num momento de tensão real, para o público querer ver a próxima."}
+          {value.mode === "cena"
+            ? "Cada clipe é um trecho corrido da cena (sem cortes no meio), começando e terminando em pausas naturais da fala — nunca começa no meio de uma resposta. Os cortes ficam só entre um clipe e outro."
+            : value.mode === "historias"
+              ? "Junta os melhores acontecimentos de uma mesma história (começo, desenvolvimento e conclusão), cortando o tempo morto no meio."
+              : "A gravação vira episódios em sequência. Cada parte termina num momento de tensão real, para o público querer ver a próxima."}
         </p>
       </div>
       <div className="grid g2">
@@ -62,17 +67,17 @@ export function GenerateForm({ value, onChange, sourceFps, sourceDuration }: { v
             value={value.format}
             onChange={(format) => set({ format })}
             options={[
+              { id: "1:1", label: "1:1 Quadrado" },
               { id: "9:16", label: "9:16 Shorts" },
               { id: "16:9", label: "16:9" },
-              { id: "1:1", label: "1:1" },
             ]}
           />
         </div>
         <div>
           <h4 style={{ marginBottom: 8 }}>Enquadramento</h4>
           <select className="input" value={value.reframe} onChange={(e) => set({ reframe: e.target.value as GenerateSettings["reframe"] })}>
-            <option value="acao">Acompanhar a ação (recorte inteligente)</option>
-            <option value="desfocado">Tela inteira com fundo desfocado</option>
+            <option value="desfocado">Imagem quase inteira, fundo desfocado (recomendado)</option>
+            <option value="acao">Acompanhar a ação (recorte mais fechado)</option>
             <option value="centro">Recorte no centro</option>
           </select>
         </div>

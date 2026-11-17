@@ -29,9 +29,15 @@ export interface Settings {
   niche: string;
   /** Lado menor do vídeo exportado. */
   exportQuality: 1080 | 720;
+  /** Cria as legendas sozinho ao exportar (se o clipe ainda não tiver). */
+  autoCaptions: boolean;
+  /** Versão dos padrões de geração (para atualizar os padrões antigos uma vez). */
+  genVersion: number;
 }
 
-export const DEFAULT_GEN: GenerateSettings = { mode: "historias", count: 3, duration: 60, format: "9:16", reframe: "acao", fps: 30, captions: true, captionLang: "pt", captionStyle: "viral", removeSilence: false, context: 3 };
+/** Padrão: cena contínua de ~1 min, quadrado, imagem quase inteira e legenda básica ligada. */
+export const DEFAULT_GEN: GenerateSettings = { mode: "cena", count: 3, duration: 60, format: "1:1", reframe: "desfocado", fps: 30, captions: true, captionLang: "orig", captionStyle: "basica", removeSilence: false, context: 3 };
+const GEN_VERSION = 2;
 
 const DEFAULT_SETTINGS: Settings = {
   useVision: true,
@@ -45,11 +51,15 @@ const DEFAULT_SETTINGS: Settings = {
   course: {},
   niche: "Gameplay de GTA",
   exportQuality: 1080,
+  autoCaptions: true,
+  genVersion: GEN_VERSION,
 };
 
 function loadSettings(): Settings {
   try {
     const raw = JSON.parse(localStorage.getItem("gca:settings") ?? "{}");
+    // Padrões novos (cena contínua, quadrado, legenda básica) substituem os antigos uma vez
+    if ((raw.genVersion ?? 1) < GEN_VERSION) return { ...DEFAULT_SETTINGS, ...raw, defaults: { ...DEFAULT_GEN, count: raw.defaults?.count ?? DEFAULT_GEN.count }, autoCaptions: true, genVersion: GEN_VERSION };
     return { ...DEFAULT_SETTINGS, ...raw, defaults: { ...DEFAULT_GEN, ...(raw.defaults ?? {}) } };
   } catch {
     return DEFAULT_SETTINGS;
@@ -170,6 +180,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           changes.push("Exportação em 720p (gasta menos da metade da memória). Dá para voltar a 1080p em Configurações.");
         }
         if (marks.some((m) => m.kind === "legendas")) {
+          if (cur.whisperModel === "onnx-community/whisper-tiny" && cur.autoCaptions) {
+            next.autoCaptions = false;
+            changes.push("Legendas automáticas na exportação desligadas: este aparelho não tem memória para a IA de fala junto com o vídeo. Os clipes saem sem legenda (dá para religar em Configurações).");
+          }
           next.whisperModel = "onnx-community/whisper-tiny";
           changes.push("Legendas com o modelo de fala menor (tiny).");
         }
@@ -279,7 +293,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
           await db.putThumbs(project.id, thumbs);
           const usable = Math.min(project.source.duration, analysis.readableUntil ?? Infinity);
-          const gen = generate(analysis.moments, buildTimeline(analysis.samples, analysis.audio, usable).intensity, p.settings, usable);
+          const tl0 = buildTimeline(analysis.samples, analysis.audio, usable);
+          const gen = generate(analysis.moments, tl0.intensity, p.settings, usable, { audio: analysis.audio, cuts: tl0.rows.map((r) => r.cut) });
           p = { ...p, status: "analisado", analysis, clips: gen.clips, notes: [...extra, ...notes, ...gen.notes] };
           await saveProject(p);
           finishJob(id);
@@ -310,7 +325,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const usable = Math.min(project.source.duration, project.analysis.readableUntil ?? Infinity);
       const tl = buildTimeline(project.analysis.samples, project.analysis.audio, usable);
       const moments = buildMoments(tl, s.useLearned ? s.learned : {});
-      const gen = generate(moments, tl.intensity, gs, usable);
+      const gen = generate(moments, tl.intensity, gs, usable, { audio: project.analysis.audio, cuts: tl.rows.map((r) => r.cut) });
       const p: Project = { ...project, settings: gs, analysis: { ...project.analysis, moments, deadSeconds: deadSeconds(moments) }, clips: gen.clips, notes: gen.notes };
       await saveProject(p);
       return p;
@@ -337,8 +352,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // A prévia do editor solta o decodificador de vídeo (celulares têm poucos)
           freeDecoders();
           for (let i = 0; i < clipIds.length; i++) {
-            const clip = fresh.clips.find((c) => c.id === clipIds[i]);
+            let clip = fresh.clips.find((c) => c.id === clipIds[i]);
             if (!clip) continue;
+            // Legendas automáticas: cria antes de exportar, se o clipe ainda não tiver
+            const st = settingsRef.current;
+            if (!light && st.autoCaptions && clip.captionsOn && !clip.captions.length && project.source.audioCodec) {
+              markBusy(id, { kind: "legendas", projectId: project.id, label: clip.title, at: Date.now(), detail: { model: st.whisperModel, auto: true } });
+              try {
+                const res = await generateCaptions(file, clip.segments, { model: st.whisperModel, spoken: st.spoken, target: clip.captionLang, onProgress: (p) => updateJob(id, { value: i / clipIds.length, detail: `${clipIds.length > 1 ? `Clipe ${i + 1} de ${clipIds.length}: ` : ""}Criando as legendas — ${p.detail}` }) });
+                if (lowMemory()) releaseAI();
+                const withCaps: Clip = { ...clip, captions: res.captions, spokenLang: res.spokenLang ?? undefined };
+                const cur = (await db.getProject(project.id)) ?? fresh;
+                await saveProject({ ...cur, clips: cur.clips.map((c) => (c.id === withCaps.id ? withCaps : c)) });
+                clip = withCaps;
+              } catch (e) {
+                if (ctrl.signal.aborted) throw e;
+                logError("legendas automáticas", e);
+                toast(`As legendas não puderam ser criadas (${e instanceof Error ? e.message : e}); o clipe será exportado sem elas.`, true);
+              }
+            }
             const short = settingsRef.current.exportQuality;
             markBusy(id, { kind: "exportacao", projectId: project.id, label: clip.title, at: Date.now(), detail: { short, format: clip.format, fps: clip.fps, seconds: clip.segments.reduce((a, s) => a + s.end - s.start, 0), res: `${project.source.width}x${project.source.height}`, codec: project.source.videoCodec } });
             const onProgress = (p: { value: number; detail: string }) => updateJob(id, { value: (i + p.value) / clipIds.length, detail: `${clipIds.length > 1 ? `Clipe ${i + 1} de ${clipIds.length}: ` : ""}${p.detail}` });
@@ -375,7 +407,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })();
       return id;
     },
-    [newJob, updateJob, finishJob, toast],
+    [newJob, updateJob, finishJob, toast, saveProject],
   );
 
   const startCaptions = useCallback(

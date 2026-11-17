@@ -661,7 +661,11 @@ function CaptionPanel({ clip, project, change, busy, busyValue, onGenerate }: { 
             <input type="range" min={0.1} max={0.95} step={0.01} value={st.position} onChange={(e) => setStyle({ position: Number(e.target.value) })} />
           </label>
           <label className="row small">
-            Cor <input type="color" value={st.color} onChange={(e) => setStyle({ color: e.target.value })} /> Destaque <input type="color" value={st.highlight} onChange={(e) => setStyle({ highlight: e.target.value })} />
+            Cor{" "}
+            <label className="row" style={{ gap: 4, display: "inline-flex" }}>
+              <input type="checkbox" checked={st.color === "auto"} onChange={(e) => setStyle({ color: e.target.checked ? "auto" : "#ffffff" })} /> automática
+            </label>{" "}
+            {st.color !== "auto" && <input type="color" value={st.color} onChange={(e) => setStyle({ color: e.target.value })} />} Destaque <input type="color" value={st.highlight} onChange={(e) => setStyle({ highlight: e.target.value })} />
           </label>
           <div className="row wrap small">
             <label className="row">

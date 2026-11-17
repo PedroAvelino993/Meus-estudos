@@ -107,13 +107,20 @@ export function drawFrame(ctx: Ctx2D, W: number, H: number, source: CanvasImageS
       ctx.fillStyle = "rgba(0,0,0,0.45)";
       ctx.fillRect(0, 0, W, H);
     }
-    // Frente: o quadro inteiro, sem cortar nada
+    // Frente: o quadro inteiro (ou levemente aproximado, seguindo a ação), quase sem cortar nada
     const zoom = Math.max(1, (clip.zoom || 1) * (st.seg.zoom || 1));
     const scale = Math.min(W / sw, H / sh) * zoom;
     const dw = sw * scale;
     const dh = sh * scale;
+    let dx = (W - dw) / 2;
+    if (dw > W) {
+      // Aproximado: o lado que sobra acompanha a ação (ou o ajuste manual)
+      const cx = clip.reframe === "desfocado" && st.seg.cropX !== undefined ? st.seg.cropX : c.path.length ? pathAt(c.path, st.srcT) : 0.5;
+      dx = Math.max(W - dw, Math.min(0, W / 2 - cx * dw));
+    }
+    const dy = Math.max(0, (H - dh) / 2 - H * 0.03);
     if (filterSupported) ctx.filter = filter;
-    ctx.drawImage(source, (W - dw) / 2, (H - dh) / 2 - H * 0.04, dw, dh);
+    ctx.drawImage(source, dx, dh >= H ? (H - dh) / 2 : dy, dw, dh);
   } else {
     const r = cropRect(sw, sh, W, H, clip, st, c.path);
     if (filterSupported) ctx.filter = filter;
@@ -151,6 +158,30 @@ function wrap(ctx: Ctx2D, words: string[], maxW: number): string[][] {
   return lines;
 }
 
+/** Cor automática por legenda: branco em fundo escuro, preto em fundo claro (mede o fundo uma vez). */
+const autoColors = new WeakMap<Caption, string>();
+function autoColor(ctx: Ctx2D, cap: Caption, W: number, H: number, cy: number, band: number): string {
+  const known = autoColors.get(cap);
+  if (known) return known;
+  let color = "#ffffff";
+  try {
+    const y = Math.max(0, Math.round(cy - band / 2));
+    const h = Math.max(1, Math.min(H - y, Math.round(band)));
+    const img = ctx.getImageData(Math.round(W * 0.1), y, Math.round(W * 0.8), h).data;
+    let sum = 0;
+    let cnt = 0;
+    for (let i = 0; i < img.length; i += 4 * 16) {
+      sum += 0.2126 * img[i] + 0.7152 * img[i + 1] + 0.0722 * img[i + 2];
+      cnt++;
+    }
+    if (cnt && sum / cnt > 165) color = "#111111";
+  } catch {
+    /* sem leitura do canvas: branco com contorno funciona em quase tudo */
+  }
+  autoColors.set(cap, color);
+  return color;
+}
+
 export function drawCaption(ctx: Ctx2D, W: number, H: number, clip: Clip, srcT: number) {
   const cap: Caption | null = captionAt(clip.captions, srcT);
   if (!cap) return;
@@ -179,6 +210,10 @@ export function drawCaption(ctx: Ctx2D, W: number, H: number, clip: Clip, srcT: 
   if (st.animation === "pop" || st.animation === "palavra") scale = age < 0.12 ? 0.82 + (age / 0.12) * 0.18 : 1;
   if (st.animation === "subir") dy = age < 0.18 ? (1 - age / 0.18) * size * 0.6 : 0;
   const cy = H * st.position + dy;
+  const color = st.color === "auto" ? autoColor(ctx, cap, W, H, cy, lines.length * lineH + size) : st.color;
+  const dark = color === "#111111";
+  // «Digitar»: cada palavra aparece (letra por letra) quando é falada; o resto ainda não aparece
+  const typing = st.animation === "digitar";
   ctx.save();
   ctx.translate(W / 2, cy);
   ctx.scale(scale, scale);
@@ -199,14 +234,23 @@ export function drawCaption(ctx: Ctx2D, W: number, H: number, clip: Clip, srcT: 
     for (const w of line) {
       const isActive = wi === activeInGroup && (st.animation === "palavra" || st.id === "destaque" || st.id === "viral");
       const ww = ctx.measureText(w).width;
-      if (st.outline) {
-        ctx.lineJoin = "round";
-        ctx.lineWidth = Math.max(2, size * 0.16);
-        ctx.strokeStyle = "rgba(0,0,0,0.92)";
-        ctx.strokeText(w, x, y);
+      let shown = w;
+      if (typing) {
+        const word = words[wi];
+        const span = Math.max(0.12, Math.min(0.45, (word?.e ?? 0) - (word?.s ?? 0)));
+        const p = word ? (srcT - word.s) / span : 1;
+        shown = p <= 0 ? "" : p >= 1 ? w : w.slice(0, Math.max(1, Math.ceil(w.length * p)));
       }
-      ctx.fillStyle = isActive ? st.highlight : cap.speaker === 2 && !isActive ? "#ffe2b8" : st.color;
-      ctx.fillText(w, x, y);
+      if (shown) {
+        if (st.outline) {
+          ctx.lineJoin = "round";
+          ctx.lineWidth = Math.max(2, size * (dark ? 0.12 : 0.16));
+          ctx.strokeStyle = dark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.92)";
+          ctx.strokeText(shown, x, y);
+        }
+        ctx.fillStyle = isActive ? st.highlight : cap.speaker === 2 && !isActive && !dark ? "#ffe2b8" : color;
+        ctx.fillText(shown, x, y);
+      }
       x += ww + ctx.measureText(" ").width;
       wi++;
     }

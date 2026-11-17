@@ -135,18 +135,19 @@ export interface Caption {
   translations: Record<string, string>;
 }
 
-export type CaptionStyleId = "tradicional" | "dinamica" | "destaque" | "viral" | "minimalista";
+export type CaptionStyleId = "basica" | "tradicional" | "dinamica" | "destaque" | "viral" | "minimalista";
 
 export interface CaptionStyle {
   id: CaptionStyleId;
   font: string;
   /** Tamanho em % da altura do vídeo. */
   size: number;
+  /** Cor do texto; "auto" = branco ou preto conforme o fundo do vídeo. */
   color: string;
   highlight: string;
   /** Posição vertical (0 = topo, 1 = base). */
   position: number;
-  animation: "nenhuma" | "pop" | "subir" | "palavra";
+  animation: "nenhuma" | "pop" | "subir" | "palavra" | "digitar";
   uppercase: boolean;
   outline: boolean;
   background: boolean;
@@ -188,7 +189,7 @@ export interface Clip {
 }
 
 export interface GenerateSettings {
-  mode: "historias" | "continua";
+  mode: "cena" | "historias" | "continua";
   count: number;
   /** Duração alvo de cada clipe, em segundos. */
   duration: number;

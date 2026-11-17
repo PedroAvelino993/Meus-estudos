@@ -59,6 +59,9 @@ export default function Settings() {
                 <option value="wasm">Sempre o processador (mais compatível, menos memória)</option>
               </select>
             </label>
+            <label className="row small">
+              <input type="checkbox" checked={settings.autoCaptions} onChange={(e) => setSettings({ autoCaptions: e.target.checked })} /> Criar as legendas sozinho ao exportar (quando o clipe ainda não tem)
+            </label>
             <label className="field">
               Modelo de fala (legendas)
               <select className="input" value={settings.whisperModel} onChange={(e) => setSettings({ whisperModel: e.target.value })}>

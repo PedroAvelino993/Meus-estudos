@@ -223,3 +223,40 @@ describe("medidas de imagem", () => {
     expect(blue.motion).toBeGreaterThan(0.2);
   });
 });
+
+describe("modo cena contínua", () => {
+  const settings: GenerateSettings = { mode: "cena", count: 2, duration: 60, format: "1:1", reframe: "desfocado", fps: 30, captions: true, captionLang: "orig", captionStyle: "basica", removeSilence: false, context: 3 };
+  const mk = (id: string, start: number, end: number, score: number, dead = false) => ({ id, start, end, category: dead ? "carregamento" : "perseguicao", score, factors: {} as never, description: "", thumbT: start, dead, peakT: (start + end) / 2 }) as never;
+  const moments = [mk("a", 0, 30, 5, true), mk("b", 30, 160, 80), mk("c", 160, 200, 5, true), mk("d", 200, 300, 60)];
+  // Fala com pausas (silêncio) em instantes conhecidos
+  const gaps = [[37, 38.5], [96, 97.5], [150, 151.2], [208, 209.5], [266, 267.5]];
+  const rms = Array.from({ length: 300 * 4 }, (_, i) => (gaps.some(([a, b]) => i / 4 >= a && i / 4 < b) ? 0.02 : 0.5 + 0.3 * Math.sin(i)));
+  const audio = { rate: 4, rms };
+  const intensity = Array.from({ length: 300 }, (_, t) => (t < 30 || (t >= 160 && t < 200) ? 0.05 : 0.6));
+
+  it("faz cada clipe com um único trecho corrido, sem repetir e fora do tempo morto", () => {
+    const r = generate(moments, intensity, settings, 300, { audio, cuts: [] });
+    expect(r.clips.length).toBe(2);
+    for (const c of r.clips) {
+      expect(c.segments.length).toBe(1);
+      const s = c.segments[0];
+      expect(s.end - s.start).toBeGreaterThanOrEqual(45);
+      expect(s.end - s.start).toBeLessThanOrEqual(78);
+      expect(s.start).toBeGreaterThanOrEqual(30);
+      expect(c.format).toBe("1:1");
+      expect(c.removeSilence).toBe(false);
+    }
+    const [a, b] = r.clips.map((c) => c.segments[0]);
+    expect(a.end).toBeLessThanOrEqual(b.start);
+  });
+
+  it("começa logo antes da fala recomeçar e termina numa pausa", () => {
+    const r = generate(moments, intensity, settings, 300, { audio, cuts: [] });
+    for (const c of r.clips) {
+      const s = c.segments[0];
+      // Início: dentro de uma pausa (até 0,3 s antes do fim dela)
+      expect(gaps.some(([g0, g1]) => s.start >= g0 - 0.01 && s.start <= g1)).toBe(true);
+      expect(gaps.some(([g0, g1]) => s.end >= g0 && s.end <= g1 + 0.01)).toBe(true);
+    }
+  });
+});
