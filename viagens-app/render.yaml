@@ -1,0 +1,29 @@
+# Blueprint do Render (https://render.com): publica a API de graça.
+# No painel do Render: New → Blueprint → escolha este repositório.
+# As chaves (sync: false) são pedidas no painel e ficam só no servidor.
+services:
+  - type: web
+    name: rota-api
+    runtime: node
+    plan: free
+    rootDir: viagens-app/backend
+    buildCommand: npm install --omit=dev
+    startCommand: node src/server.ts
+    healthCheckPath: /api/status
+    envVars:
+      - key: NODE_VERSION
+        value: "22.20.0"
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: SERPAPI_KEY
+        sync: false
+      - key: DUFFEL_TOKEN
+        sync: false
+      - key: DEALS_ORIGIN
+        sync: false
+      - key: DEALS_DESTINATIONS
+        sync: false
+      - key: ACCOUNTS_ENABLED
+        value: "true"
+      - key: DATABASE_FILE
+        value: ./data/viagens.db

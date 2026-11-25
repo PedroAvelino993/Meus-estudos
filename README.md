@@ -81,3 +81,18 @@ Plataforma de edição automatizada que transforma gravações longas de gamepla
 - **YouTube:** curso de canal e monetização, requisitos oficiais e análise do canal pela API oficial.
 
 Tudo roda no navegador do próprio aparelho, sem servidor. Abre em `/gtaclips/` no mesmo link do GitHub Pages. O código-fonte fica em `gtaclips-app/` e o app publicado é gerado em `gtaclips/`. Detalhes em `gtaclips-app/README.md`.
+
+## Rota — agência de viagens digital
+
+Pesquisa de passagens e hotéis em fontes reais, assistente de destino e planejamento completo da viagem.
+
+- **Passagens:** busca por cidade (todos os aeroportos) ou aeroporto, só ida ou ida e volta, adultos, crianças e bebês, classe e só voos diretos. Mostra companhia, preço total e por passageiro, horários, duração, escalas e tempo de cada conexão, bagagem, regras da tarifa e link de compra.
+- **Ordenar e filtrar:** menor preço, menor duração, menos escalas, custo-benefício e filtros.
+- **Origem dos preços:** Google Flights e Duffel. Cada preço mostra a fonte, a hora em que foi encontrado e se a disponibilidade foi confirmada.
+- **Hotéis:** fotos, estrelas, avaliações, distância do centro, serviços, café da manhã, diária, total e links de reserva, com comparação lado a lado.
+- **Destinos:** pontos turísticos, museus, parques, praias, restaurantes, vida noturna, previsão do tempo, dicas e roteiro dia a dia agrupando lugares próximos. Fontes: OpenStreetMap, Wikipédia, Wikivoyage e Open-Meteo.
+- **Minhas viagens:** passagens, hotel, passeios por dia, restaurantes, endereços, gastos, orçamento e resumo financeiro.
+- **Comparar:** passagens e viagens salvas lado a lado.
+
+Nenhum preço é inventado. Sem o servidor configurado, o app explica o que falta e abre a mesma busca nos sites oficiais. Abre em `/viagens/` no mesmo link do GitHub Pages. O código-fonte fica em `viagens-app/` (frontend React + TypeScript, backend Node + TypeScript que guarda as chaves das APIs) e o app publicado é gerado em `viagens/`. Detalhes em `viagens-app/docs/`.
+
