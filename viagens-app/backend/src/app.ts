@@ -32,6 +32,8 @@ export function createApp(cfg: Config): Server {
         return;
       }
       if (cfg.staticDir) return await serveStatic(cfg.staticDir, url.pathname, res);
+      // Página inicial do servidor (sem o site): mostra que está no ar e onde ver a situação
+      if (url.pathname === "/") return send(res, 200, { ok: true, message: "API do Rota no ar. Veja o que está configurado em /api/status e cole este endereço no app em Ajustes." });
       send(res, 404, { error: "Não encontrado.", code: "not_found" });
     } catch (e) {
       if (e instanceof HttpError) return send(res, e.status, { error: e.message, code: e.code });
