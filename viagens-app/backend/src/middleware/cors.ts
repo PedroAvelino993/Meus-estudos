@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 export function applyCors(req: IncomingMessage, res: ServerResponse, allowed: string[]): boolean {
   const origin = req.headers.origin;
-  if (origin && (allowed.includes(origin) || allowed.includes("*"))) {
+  if (origin && (allowed.includes(origin.toLowerCase()) || allowed.includes("*"))) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");

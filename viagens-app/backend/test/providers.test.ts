@@ -100,3 +100,12 @@ test("Hotéis: parâmetros e normalização (preço, café, fotos, distâncias)"
   assert.equal(hotels[1].priceKind, "none");
   assert.equal(hotels[1].breakfast, false);
 });
+
+test("ALLOWED_ORIGINS aceita o endereço escrito de vários jeitos", async () => {
+  const { normalizeOrigin } = await import("../src/config/env.ts");
+  for (const v of ["https://PedroAvelino993.github.io", "https://pedroavelino993.github.io/", "https://pedroavelino993.github.io/Meus-estudos/viagens/", "pedroavelino993.github.io", " 'https://pedroavelino993.github.io' "]) {
+    assert.equal(normalizeOrigin(v), "https://pedroavelino993.github.io", v);
+  }
+  assert.equal(normalizeOrigin("http://localhost:5173/"), "http://localhost:5173");
+  assert.equal(normalizeOrigin("*"), "*");
+});

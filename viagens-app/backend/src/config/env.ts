@@ -23,9 +23,23 @@ const list = (name: string): string[] =>
     .map((s) => s.trim())
     .filter(Boolean);
 
+/**
+ * Origem de um site: aceita o endereço escrito com maiúsculas, barra no fim ou caminho
+ * (ex.: «https://Usuario.github.io/Meus-estudos/» → «https://usuario.github.io»).
+ */
+export function normalizeOrigin(raw: string): string {
+  const v = raw.trim().replace(/^["']|["']$/g, "");
+  if (v === "*") return v;
+  try {
+    return new URL(/^https?:\/\//i.test(v) ? v : `https://${v}`).origin.toLowerCase();
+  } catch {
+    return v.toLowerCase().replace(/\/+$/, "");
+  }
+}
+
 export const config = {
   port: num("PORT", 8787),
-  allowedOrigins: list("ALLOWED_ORIGINS"),
+  allowedOrigins: list("ALLOWED_ORIGINS").map(normalizeOrigin),
   serpApiKey: str("SERPAPI_KEY"),
   /** Endereço da SerpApi (troque só para testes ou proxy). */
   serpApiBase: str("SERPAPI_BASE_URL", "https://serpapi.com/search"),
