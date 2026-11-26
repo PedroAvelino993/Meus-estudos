@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { CheckCircle2, Download, LogOut, RefreshCw, Upload, XCircle } from "lucide-react";
 import type { ServerStatus, Trip } from "../types";
-import { api, serverStatus } from "../api/client";
+import { api, diagnoseServer, serverStatus } from "../api/client";
 import { apiUrl, setApiUrl } from "../config";
 import { getSession, setSession, type Session } from "../database/session";
 import { syncTrips } from "../database/sync";
@@ -29,6 +29,7 @@ function ServerCard() {
   const [url, setUrl] = useState(apiUrl());
   const [tick, setTick] = useState(0);
   const status = useAsync<ServerStatus | null>(() => serverStatus(true), [tick, apiUrl()], !!apiUrl());
+  const why = useAsync(() => diagnoseServer(), [tick, apiUrl(), status.data === null && !status.loading], !!apiUrl() && status.data === null && !status.loading);
   return (
     <div className="card stack">
       <h2>Servidor de pesquisa</h2>
@@ -49,7 +50,17 @@ function ServerCard() {
       </form>
       {!apiUrl() && <Notice kind="info">Nenhum servidor configurado. Veja como publicar o seu (é gratuito) no arquivo docs/SETUP.md do projeto.</Notice>}
       {status.loading && <Loading text="Testando o servidor…" />}
-      {apiUrl() && !status.loading && status.data === null && <Notice kind="bad">Não foi possível falar com {apiUrl()}. Confira o endereço e se o servidor permite este site (ALLOWED_ORIGINS).</Notice>}
+      {apiUrl() && !status.loading && status.data === null && (
+        <Notice kind="bad">
+          {why.data === "cors" ? (
+            <>
+              O servidor está no ar, mas <b>não autoriza este site</b>. No Render, abra o serviço → <b>Environment</b> e coloque <b>ALLOWED_ORIGINS</b> = <code>{location.origin}</code> (sem barra no fim). Salve, espere ficar «Live» e toque em «Salvar e testar» de novo.
+            </>
+          ) : (
+            <>Não foi possível falar com {apiUrl()}. Se o servidor é do plano grátis do Render, ele pode estar «dormindo»: espere 1 minuto e toque em «Salvar e testar» de novo. Confira também o endereço.</>
+          )}
+        </Notice>
+      )}
       {status.data && (
         <div className="stack tight">
           <Notice kind="good">Servidor respondendo (versão {status.data.version}).</Notice>

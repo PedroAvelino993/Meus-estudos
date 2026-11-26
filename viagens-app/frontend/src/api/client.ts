@@ -38,6 +38,20 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   return data as T;
 }
 
+/**
+ * Por que o servidor não respondeu? Se uma chamada sem CORS chega, o servidor está no ar mas
+ * não autoriza este site (ALLOWED_ORIGINS); se nem ela chega, está fora do ar ou dormindo.
+ */
+export async function diagnoseServer(): Promise<"cors" | "down"> {
+  const base = apiUrl();
+  try {
+    await fetch(`${base}/api/status`, { mode: "no-cors" });
+    return "cors";
+  } catch {
+    return "down";
+  }
+}
+
 let statusCache: { at: number; value: ServerStatus | null; url: string } | null = null;
 
 /** O que o servidor tem configurado (fornecedores, contas). null = sem servidor. */
