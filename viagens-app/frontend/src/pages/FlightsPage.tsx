@@ -1,12 +1,13 @@
 // Pesquisa de passagens: resultados reais dos fornecedores, filtros, ordenação, volta e compra.
 
 import { useEffect, useMemo, useState } from "react";
-import { Settings } from "lucide-react";
+import { Pencil, Settings } from "lucide-react";
 import type { BookingOptionsResponse, FlightOffer, FlightSearchParams, FlightSearchResponse } from "../types";
 import { ApiRequestError, hasServer } from "../api/client";
 import { FlightSearchForm } from "../components/FlightSearchForm";
 import { FlightCard } from "../components/FlightCard";
 import { FlightFiltersPanel } from "../components/FlightFiltersPanel";
+import { FlightPager } from "../components/FlightPager";
 import { BookingOptions } from "../components/BookingOptions";
 import { ProviderLinks, ProviderStatusLine } from "../components/ProviderLinks";
 import { Empty, Modal, Notice, Seg, Skeleton, Loading } from "../components/ui";
@@ -16,9 +17,18 @@ import { labelFor } from "../services/flights/airports";
 import { providerLinks } from "../services/flights/links";
 import { paramsToQuery, partialParams, passengersLabel, queryToParams, CABIN_LABEL } from "../services/flights/params";
 import { bookingOptions, returnFlights, searchFlights } from "../services/flights/search";
-import { applyFilters, NO_FILTERS, sortOffers, SORT_LABEL, type FlightFilters, type FlightSort } from "../services/flights/sort";
+import { applyFilters, NO_FILTERS, sortOffers, type FlightFilters, type FlightSort } from "../services/flights/sort";
 import { rememberSearch } from "../database/recent";
-import { ago, dayLabel, money } from "../utils/format";
+import { dayLabel, money } from "../utils/format";
+
+const PRICE_LEVEL: Record<string, string> = { low: "baixo", typical: "normal", high: "alto" };
+
+/** O que mostrar primeiro (em palavras simples). */
+const FIRST: { id: FlightSort; label: string; title: string }[] = [
+  { id: "value", label: "Melhor opção", title: "Melhor opção (preço e tempo de viagem juntos)" },
+  { id: "price", label: "Mais barato", title: "A opção mais barata" },
+  { id: "duration", label: "Mais rápido", title: "A opção mais rápida" },
+];
 
 function NoLiveSearch({ p, reason }: { p: FlightSearchParams; reason: string }) {
   return (
@@ -38,9 +48,10 @@ function NoLiveSearch({ p, reason }: { p: FlightSearchParams; reason: string }) 
 
 export function FlightsPage({ query }: { query: URLSearchParams }) {
   const params = useMemo(() => queryToParams(query), [query.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [sort, setSort] = useState<FlightSort>("price");
+  const [sort, setSort] = useState<FlightSort>("value");
   const [filters, setFilters] = useState<FlightFilters>(NO_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [outbound, setOutbound] = useState<FlightOffer | null>(null);
   const [returns, setReturns] = useState<{ loading: boolean; data: FlightSearchResponse | null; error: string | null }>({ loading: false, data: null, error: null });
   const [booking, setBooking] = useState<{ loading: boolean; data: BookingOptionsResponse | null; error: string | null } | null>(null);
@@ -84,9 +95,11 @@ export function FlightsPage({ query }: { query: URLSearchParams }) {
   const err = res.error as ApiRequestError | null;
   return (
     <div className="stack">
-      <div className="card">
-        <FlightSearchForm key={query.toString()} compact initial={params ?? partialParams(query)} onSearch={(p) => navigate("voos", paramsToQuery(p))} />
-      </div>
+      {(!params || editing) && (
+        <div className="card">
+          <FlightSearchForm key={query.toString()} compact initial={params ?? partialParams(query)} onSearch={(p) => { setEditing(false); navigate("voos", paramsToQuery(p)); }} />
+        </div>
+      )}
 
       {!params && <Empty>Escolha origem, destino e datas para pesquisar.</Empty>}
 
@@ -101,8 +114,13 @@ export function FlightsPage({ query }: { query: URLSearchParams }) {
               {params.returnDate ? ` – ${dayLabel(params.returnDate)}` : " · só ida"} · {passengersLabel(params)} · {CABIN_LABEL[params.cabin]}
               {params.directOnly ? " · só diretos" : ""}
             </div>
+            {!editing && (
+              <button className="btn sm" style={{ marginTop: 8 }} onClick={() => setEditing(true)}>
+                <Pencil size={14} /> Alterar busca
+              </button>
+            )}
           </div>
-          {res.data && <Seg value={sort} onChange={setSort} label="Ordenar" options={(Object.keys(SORT_LABEL) as FlightSort[]).map((id) => ({ id, label: SORT_LABEL[id] }))} />}
+          {res.data && res.data.offers.length > 1 && <Seg value={sort} onChange={setSort} label="Mostrar primeiro" options={FIRST.map(({ id, label }) => ({ id, label }))} />}
         </div>
       )}
 
@@ -125,18 +143,17 @@ export function FlightsPage({ query }: { query: URLSearchParams }) {
 
       {params && res.data && (
         <div className="stack">
-          <ProviderStatusLine providers={res.data.providers} />
-          {res.data.insights?.lowest !== undefined && (
-            <Notice kind="info">
-              Google Flights: menor preço desta busca {money(res.data.insights.lowest, res.data.insights.currency)}
-              {res.data.insights.level ? ` — nível de preço «${res.data.insights.level}»` : ""}
-              {res.data.insights.typicalRange ? ` (o normal para esta rota fica entre ${money(res.data.insights.typicalRange[0], res.data.insights.currency)} e ${money(res.data.insights.typicalRange[1], res.data.insights.currency)})` : ""}.
-            </Notice>
+          <ProviderStatusLine providers={res.data.providers.filter((p) => !p.ok && !p.notConfigured)} />
+          {res.data.insights?.level && (
+            <div className="small muted">
+              Google Flights diz que o preço para esta rota está <b>{PRICE_LEVEL[res.data.insights.level] ?? res.data.insights.level}</b>
+              {res.data.insights.typicalRange ? ` (o normal é entre ${money(res.data.insights.typicalRange[0], res.data.insights.currency)} e ${money(res.data.insights.typicalRange[1], res.data.insights.currency)})` : ""}.
+            </div>
           )}
           {res.data.notes.map((n) => (
-            <Notice key={n} kind="warn">
+            <div key={n} className="tiny muted">
               {n}
-            </Notice>
+            </div>
           ))}
           {!res.data.offers.length && (
             <div className="stack">
@@ -147,27 +164,15 @@ export function FlightsPage({ query }: { query: URLSearchParams }) {
             </div>
           )}
           {res.data.offers.length > 0 && (
-            <div className="layout-side">
-              <div className="stack">
-                <button className="btn only-mobile" onClick={() => setShowFilters((s) => !s)} aria-expanded={showFilters}>
-                  {showFilters ? "Esconder filtros" : "Mostrar filtros"}
-                </button>
-                <div className={showFilters ? "" : "closed-mobile"}>
-                  <FlightFiltersPanel offers={res.data.offers} value={filters} onChange={setFilters} />
-                </div>
-              </div>
-              <div className="stack">
-                <div className="small muted">
-                  {visible.length} de {res.data.offers.length} voos · pesquisa feita {ago(res.data.fetchedAt)} · ordenado por {SORT_LABEL[sort].toLowerCase()}
-                  {sort === "value" && " (preço e duração juntos: um voo pouco mais caro e bem mais rápido pode ganhar)"}
-                </div>
-                {visible.map((o) => (
-                  <FlightCard key={o.id} offer={o} onChooseReturn={chooseReturn} onBuy={buy} />
-                ))}
-                {!visible.length && <Empty>Nenhum voo com esses filtros. Clique em «Limpar» nos filtros.</Empty>}
-                <div className="card">
-                  <ProviderLinks title="Comparar com outros sites:" links={providerLinks(params)} />
-                </div>
+            <div className="stack">
+              <FlightPager offers={visible} title={(i) => (i === 0 ? FIRST.find((f) => f.id === sort)?.title : "Outra opção")} render={(o) => <FlightCard offer={o} onChooseReturn={chooseReturn} onBuy={buy} />} />
+              {!visible.length && <Empty>Nenhum voo com esses filtros. Toque em «Limpar» nos filtros.</Empty>}
+              <button className="btn ghost sm" style={{ alignSelf: "flex-start" }} onClick={() => setShowFilters((s) => !s)} aria-expanded={showFilters}>
+                {showFilters ? "Esconder filtros" : "Filtrar (escalas, horário, companhia, bagagem…)"}
+              </button>
+              {showFilters && <FlightFiltersPanel offers={res.data.offers} value={filters} onChange={setFilters} />}
+              <div className="card">
+                <ProviderLinks title="Comparar com outros sites:" links={providerLinks(params)} />
               </div>
             </div>
           )}
@@ -177,14 +182,16 @@ export function FlightsPage({ query }: { query: URLSearchParams }) {
       {outbound && (
         <Modal title="Escolha o voo de volta" onClose={() => setOutbound(null)}>
           <div className="stack">
-            <FlightCard offer={outbound} chosenLabel="Ida escolhida" />
+            <div className="small">
+              <b>Ida escolhida:</b> {outbound.legs[0].segments[0] ? `${dayLabel(outbound.legs[0].departure)}, sai às ${outbound.legs[0].departure.slice(11, 16)} e chega às ${outbound.legs[0].arrival.slice(11, 16)} (${outbound.airlines.join(" + ")})` : ""}.{" "}
+              <button className="btn ghost sm" onClick={() => setOutbound(null)}>Trocar a ida</button>
+            </div>
             {returns.loading && <Loading text="Buscando voos de volta para esta ida…" />}
             {returns.error && <Notice kind="bad">{returns.error}</Notice>}
             {returns.data && !returns.data.offers.length && <Empty>Sem voos de volta disponíveis para esta ida. Escolha outra ida.</Empty>}
-            {returns.data && <div className="small muted">Preço = total de ida e volta para todos os passageiros.</div>}
-            {returns.data?.offers.map((o) => (
-              <FlightCard key={o.id} offer={o} onBuy={buy} />
-            ))}
+            {returns.data && returns.data.offers.length > 0 && (
+              <FlightPager offers={returns.data.offers} title={(i) => (i === 0 ? "Voo de volta (o preço é o total de ida e volta)" : "Outra opção de volta")} render={(o) => <FlightCard offer={o} onBuy={buy} onlyReturn />} />
+            )}
           </div>
         </Modal>
       )}

@@ -154,10 +154,29 @@ textarea.input { min-height: 80px; resize: vertical; }
   .flight { grid-template-columns: 1fr; }
   .flight-side { border-left: 0; border-top: 1px solid var(--line); }
 }
-.leg { display: grid; grid-template-columns: 90px minmax(0, 1fr) 90px; gap: 10px; align-items: center; }
-.leg .t { font-size: 20px; font-weight: 750; font-variant-numeric: tabular-nums; }
-.leg .line { position: relative; height: 2px; background: #c8d0dc; margin: 6px 0; }
-.leg .line i { position: absolute; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #fff; border: 2px solid var(--warn); }
+.flight { scroll-margin-top: 80px; }
+.upper { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+.leg-title { font-size: 19px; font-weight: 800; line-height: 1.25; }
+.pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 13px; font-weight: 650; background: var(--bg); color: var(--text); }
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+/* Linha do tempo do voo: horário | bolinha e linha | cidade */
+.route { list-style: none; margin: 4px 0 0; padding: 0; }
+.route li { display: grid; grid-template-columns: 46px 14px minmax(0, 1fr); column-gap: 10px; position: relative; }
+.route li::before { content: ""; position: absolute; left: 62px; top: 0; bottom: 0; width: 2px; background: #c8d0dc; }
+.route li:first-child::before { top: 10px; }
+.route li:last-child::before { bottom: auto; height: 10px; }
+.rt-time { font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; font-size: 15px; line-height: 20px; }
+.rt-dot { justify-self: center; width: 12px; height: 12px; margin-top: 4px; box-sizing: border-box; border-radius: 50%; background: var(--brand); position: relative; z-index: 1; }
+.rt-point.stop .rt-dot { background: #fff; border: 3px solid var(--warn); }
+.rt-text { display: flex; flex-direction: column; line-height: 20px; padding-bottom: 2px; }
+.rt-text b { font-size: 15px; }
+.rt-note { font-size: 13px; color: var(--muted); line-height: 18px; }
+.rt-note.warn { color: var(--warn); }
+.rt-flight .rt-note { display: flex; align-items: center; gap: 5px; padding: 6px 0; }
+.pager { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+.pager .count { text-align: center; }
+@media (max-width: 560px) { .pager .btn.prev span { display: none; } }
 .airline-logo { width: 26px; height: 26px; border-radius: 6px; background: var(--bg); display: grid; place-items: center; font-size: 11px; font-weight: 800; color: var(--muted); flex: none; }
 
 .tag { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 650; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
@@ -231,3 +250,4 @@ table.compare td.best { background: var(--good-soft); }
   .only-mobile { display: inline-flex; }
   .closed-mobile { display: none; }
 }
+.flight-side .btn { white-space: normal; text-align: center; }
