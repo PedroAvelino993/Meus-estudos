@@ -1,5 +1,5 @@
 # Blueprint do Render (https://render.com): publica a API de graça.
-# No painel do Render: New → Blueprint → escolha este repositório.
+# No painel do Render: New → Blueprint → escolha este repositório (o Render lê este arquivo na raiz).
 # As chaves (sync: false) são pedidas no painel e ficam só no servidor.
 services:
   - type: web

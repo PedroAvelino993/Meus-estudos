@@ -55,7 +55,7 @@ Usa a SerpApi (1 busca por destino a cada atualização).
 
 ### API (backend) — Render (gratuito)
 
-1. Em <https://render.com>: **New → Blueprint** e escolha o repositório (usa `viagens-app/render.yaml`).
+1. Em <https://render.com>: **New → Blueprint** e escolha o repositório (usa o `render.yaml` da raiz do repositório).
 2. Preencha no painel: `ALLOWED_ORIGINS=https://<usuário>.github.io`, `SERPAPI_KEY`, `DUFFEL_TOKEN` (opcional), `DEALS_*` (opcional).
 3. Depois de publicado, copie o endereço (ex.: `https://rota-api.onrender.com`) e coloque no app em **Ajustes → Servidor de pesquisa**.
 
